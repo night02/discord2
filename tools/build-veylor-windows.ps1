@@ -1,4 +1,4 @@
-# Windows fallback for Veylor V0.3.8 when GitHub-hosted runners cannot start.
+# Windows fallback for Veylor V0.4.0 when GitHub-hosted runners cannot start.
 # Requires Flutter stable, Visual Studio C++ desktop workload, Node.js 22+, Inno Setup 6.
 [CmdletBinding()]
 param()
@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $clientRoot = Join-Path $repoRoot "apps\client"
 $serverRoot = Join-Path $repoRoot "apps\server"
-$version = "0.3.8"
+$version = "0.4.0"
 $setupName = "Veylor-v$version-Setup-Windows-x64.exe"
 $zipName = "Veylor-v$version-Windows-x64.zip"
 $releaseDir = Join-Path $clientRoot "build\windows\x64\runner\Release"
@@ -53,7 +53,7 @@ try {
     Invoke-Checked "flutter" (@("test") + $testFiles)
     Invoke-Checked "python" @("tool/prepare_brand_icon.py")
     Invoke-Checked "flutter" @("build", "windows", "--release")
-    "0.3.8" | Set-Content (Join-Path $releaseDir "veylor-version.txt") -NoNewline
+    "0.4.0" | Set-Content (Join-Path $releaseDir "veylor-version.txt") -NoNewline
     Invoke-Checked "dart" @("compile", "exe", "tool/windows_update_runner.dart", "-o", (Join-Path $releaseDir "veylor-updater.exe"))
     $exe = Join-Path $releaseDir "veylor.exe"
     if (-not (Test-Path $exe)) { throw "No Windows EXE produced." }
