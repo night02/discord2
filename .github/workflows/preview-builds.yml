@@ -1,4 +1,4 @@
-name: Veylor V0.3.3 preview builds
+name: Veylor V0.3.4 preview builds
 on:
   pull_request:
     paths:
@@ -30,7 +30,7 @@ jobs:
       - run: flutter build windows --release
       - name: Pack portable Windows bundle
         shell: pwsh
-        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Veylor-v0.3.3-Windows-x64.zip -Force
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Veylor-v0.3.4-Windows-x64.zip -Force
       - name: Install Inno Setup compiler
         shell: pwsh
         run: choco install innosetup --yes --no-progress
@@ -46,17 +46,17 @@ jobs:
           if (-not (Test-Path "build/windows/x64/runner/Release/veylor.exe")) { throw "Veylor exe not found in Windows build" }
           & $compiler "windows-installer.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed ($LASTEXITCODE)" }
-          if (-not (Test-Path "dist/Veylor-v0.3.3-Setup-Windows-x64.exe")) { throw "Installer not generated" }
+          if (-not (Test-Path "dist/Veylor-v0.3.4-Setup-Windows-x64.exe")) { throw "Installer not generated" }
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.3-Setup-Windows-x64
-          path: apps/client/dist/Veylor-v0.3.3-Setup-Windows-x64.exe
+          name: Veylor-v0.3.4-Setup-Windows-x64
+          path: apps/client/dist/Veylor-v0.3.4-Setup-Windows-x64.exe
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.3-Windows-x64
-          path: apps/client/Veylor-v0.3.3-Windows-x64.zip
+          name: Veylor-v0.3.4-Windows-x64
+          path: apps/client/Veylor-v0.3.4-Windows-x64.zip
           if-no-files-found: error
           retention-days: 7
   linux:
@@ -79,11 +79,11 @@ jobs:
       - run: flutter pub get
       - run: flutter build linux --release
       - name: Pack Linux bundle
-        run: tar -C build/linux/x64/release/bundle -czf Veylor-v0.3.3-Linux-x64.tar.gz .
+        run: tar -C build/linux/x64/release/bundle -czf Veylor-v0.3.4-Linux-x64.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.3-Linux-x64
-          path: apps/client/Veylor-v0.3.3-Linux-x64.tar.gz
+          name: Veylor-v0.3.4-Linux-x64
+          path: apps/client/Veylor-v0.3.4-Linux-x64.tar.gz
           if-no-files-found: error
           retention-days: 7
   android:
@@ -108,7 +108,7 @@ jobs:
       - run: flutter build apk --debug
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.3-Android-debug
+          name: Veylor-v0.3.4-Android-debug
           path: apps/client/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 7
