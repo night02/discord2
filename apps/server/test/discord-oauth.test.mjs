@@ -113,9 +113,9 @@ test('forged, denied, expired or replayed browser callbacks are rejected',async(
     const s=await oauth.start();
     const state=new URL(s.url).searchParams.get('state');
     await assert.rejects(oauth.callback(new URL(`${env.DISCORD_REDIRECT_URI}?state=${'f'.repeat(64)}&code=valid-auth-code`)));
-    await assert.rejects(oauth.callback(new URL(`${env.DISCORD_REDIRECT_URI}?state=\${state}&error=access_denied`)),{status:400});
+    await assert.rejects(oauth.callback(new URL(`${env.DISCORD_REDIRECT_URI}?state=${state}&error=access_denied`)),{status:400});
     await assert.rejects(oauth.poll({request_id:s.request_id,poll_secret:s.poll_secret}),{status:401});
-    await assert.rejects(oauth.callback(new URL(`${env.DISCORD_REDIRECT_URI}?state=\${state}&code=valid-auth-code`)));
+    await assert.rejects(oauth.callback(new URL(`${env.DISCORD_REDIRECT_URI}?state=${state}&code=valid-auth-code`)));
     const t=await oauth.start();
     advance(300001);
     await assert.rejects(oauth.poll({request_id:t.request_id,poll_secret:t.poll_secret}),{status:401});
