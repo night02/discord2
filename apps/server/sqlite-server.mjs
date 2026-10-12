@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { createV02 } from './v02.mjs';
 import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
 import {sqliteDiscordAdapter} from './discord-sqlite.mjs';
+import {integrationStatus,liveKitReady} from './integration-readiness.mjs';
 
 // Public update metadata points only to already-built, manually verified beta artifacts.
 const androidRelease = JSON.parse(readFileSync(new URL('./mobile-release.json', import.meta.url),'utf8'));
@@ -184,6 +185,7 @@ export const app = http.createServer(async (req,res) => {
 
     const user=sessionUser(req);
     if (await v02.route(req,res,user,pathname,method,uri)) return;
+    if (method==='GET' && pathname==='/api/integrations/status') return json(res,200,integrationStatus());
     if (method==='GET' && pathname==='/api/me') return json(res,200,{user});
     if (method==='POST' && pathname==='/api/logout') {
       const token=req.headers.authorization.slice(7);
@@ -261,9 +263,8 @@ export const app = http.createServer(async (req,res) => {
       if (typeof channel_id!=='string') throw fail(400,'Canal inválido');
       const channel=accessibleChannel(user.id,channel_id);
       if (channel.type!=='voice') throw fail(400,'Entre em um canal de voz');
-      const {LIVEKIT_URL,LIVEKIT_API_KEY,LIVEKIT_API_SECRET}=process.env;
-      if (!LIVEKIT_URL||!LIVEKIT_API_KEY||!LIVEKIT_API_SECRET) throw fail(503,'LiveKit ainda não configurado no servidor');
-      if (!/^wss:\/\//.test(LIVEKIT_URL)) throw fail(503,'LiveKit precisa de uma URL segura wss://');
+      const {LIVEKIT_URL}=process.env;
+      if(!liveKitReady())throw fail(503,'LiveKit ainda não configurado no servidor');
       return json(res,200,{url:LIVEKIT_URL,token:mediaToken(user,'veylor-'+channel.id)});
     }
     throw fail(404,'Rota não encontrada');
