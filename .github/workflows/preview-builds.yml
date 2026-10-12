@@ -164,6 +164,29 @@ jobs:
           path: apps/client/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+      - name: Integration-test Android release APK and AAB with disposable CI-only signing key
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          VEYLOR_KEY_ALIAS: veylor-ci
+          VEYLOR_KEY_PASSWORD: ci-throwaway-password
+          VEYLOR_STORE_PASSWORD: ci-throwaway-password
+          VEYLOR_KEYSTORE_PATH: veylor-release.jks
+        run: |
+          set -euo pipefail
+          trap 'rm -f android/app/veylor-release.jks' EXIT
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore android/app/veylor-release.jks -alias veylor-ci -keyalg RSA -keysize 2048 -validity 2 -storepass ci-throwaway-password -keypass ci-throwaway-password -dname "CN=CI Test, O=Veylor, C=BR"
+          python3 tool/configure_android_signing.py
+          flutter build apk --release
+          flutter build appbundle --release
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          aab=build/app/outputs/bundle/release/app-release.aab
+          test -s "$apk" && test -s "$aab"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          signer=$(find "$sdk/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$signer" verify "$apk"
+          jarsigner -verify "$aab" > /dev/null
+          echo "Disposable CI key verified APK and AAB (test-only; no signed artifact uploaded)."
       - name: Build permanent-key Android release APK and Play Store AAB, if configured
         id: android-sign
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
