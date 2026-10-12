@@ -517,6 +517,7 @@ class _HomeState extends State<Home> {
           ]),
           actions:[TextButton(onPressed:(){
             cancelled=true;
+            progressVisible=false;
             Navigator.of(ctx).pop();
           },child:const Text('Cancelar'))],
         ));
