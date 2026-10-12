@@ -2,7 +2,7 @@
 
 Veylor é um aplicativo **beta** de comunicação por texto para Windows, Android e Linux, com cliente Flutter e backend Node.js/PostgreSQL. O objetivo é oferecer servidores, canais de texto e conversas privadas com sincronização em tempo real.
 
-> **Estado atual:** V0.3.4 em desenvolvimento. O `main` pode estar atrás da branch de testes. Não trate builds de depuração como versão estável.
+> **Estado atual:** V0.3.4 disponível como beta; V0.3.5 em testes no PR #3. Não trate builds de depuração como versão estável.
 
 ## Recursos atuais
 
@@ -20,14 +20,14 @@ Veylor é um aplicativo **beta** de comunicação por texto para Windows, Androi
 
 Depois de uma execução aprovada, procure os artefatos em **[GitHub Actions](https://github.com/night02/discord2/actions)**. O instalador Windows (`Setup-Windows-x64.exe`) e os pacotes portáteis são gerados separadamente. Os arquivos de Actions expiram após o prazo de retenção.
 
-As **[GitHub Releases](https://github.com/night02/discord2/releases)** são o canal planejado para downloads duradouros. Uma prerelease só será anunciada após **testes completos e publicação manual**. Não considere uma tag ou APK disponível até que os arquivos realmente existam.
+As **[GitHub Releases](https://github.com/night02/discord2/releases)** são o canal planejado para downloads duradouros. Uma prerelease é publicada automaticamente somente após builds e testes obrigatórios aprovados no mesmo commit de `main`. A instalação e a validação em dispositivos reais continuam manuais. Não considere uma tag ou APK disponível até que os arquivos realmente existam.
 
 - **Windows:** instalar usando o Setup.exe ou extrair o pacote portátil completo (inclui DLLs).
 - **Android:** APK debug exclusivamente para testes; assinatura permanente ainda pendente. Não há versão Play Store.
 - **Linux:** extrair todo o tarball portátil.
 - **iOS:** código Flutter possível, mas sem IPA compilado/assinado neste repositório.
 
-O instalador Windows ainda não está assinado com certificado Authenticode. Não desative as proteções do sistema para instalar.
+Sem certificado Authenticode configurado, o instalador Windows é uma beta **não assinada**; o fluxo CI também testa instalação, integridade do executável e desinstalação. Não desative as proteções do sistema para instalar.
 
 ## Desenvolver localmente
 
