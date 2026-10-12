@@ -1,0 +1,25 @@
+name: Flutter analyze and tests
+on:
+  push:
+  pull_request:
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter create --project-name veylor --platforms=linux,android,ios,windows .
+        working-directory: apps/client
+      - run: rm -f test/widget_test.dart
+        working-directory: apps/client
+      - run: flutter pub get
+        working-directory: apps/client
+      - run: flutter analyze --no-fatal-infos
+        working-directory: apps/client
+      - run: flutter test
+        working-directory: apps/client
+      - name: Test safe Android signing configuration
+        run: python3 -m unittest discover -s tool -p 'test_*.py'
+        working-directory: apps/client

@@ -1,0 +1,17 @@
+# Secrets, databases and generated binaries
+.env
+.env.*
+!.env.example
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+apps/server/data/
+apps/client/.dart_tool/
+apps/client/.flutter-plugins*
+apps/client/build/
+apps/client/.packages
+.DS_Store
+*.exe
+*.apk
+*.aab
+*.ipa

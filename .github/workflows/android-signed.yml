@@ -1,0 +1,77 @@
+name: Veylor Android signed beta
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android-release:
+    name: Android signed release APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/client
+    env:
+      VEYLOR_KEY_ALIAS: ${{ secrets.VEYLOR_ANDROID_KEY_ALIAS }}
+      VEYLOR_KEY_PASSWORD: ${{ secrets.VEYLOR_ANDROID_KEY_PASSWORD }}
+      VEYLOR_STORE_PASSWORD: ${{ secrets.VEYLOR_ANDROID_STORE_PASSWORD }}
+      VEYLOR_KEYSTORE_BASE64: ${{ secrets.VEYLOR_ANDROID_KEYSTORE_BASE64 }}
+      VEYLOR_KEYSTORE_PATH: veylor-release.jks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create --org com.veylor --project-name veylor --platforms=android .
+      - run: flutter pub get
+      - name: Require GitHub Actions signing secrets
+        shell: bash
+        run: |
+          for name in VEYLOR_KEY_ALIAS VEYLOR_KEY_PASSWORD VEYLOR_STORE_PASSWORD VEYLOR_KEYSTORE_BASE64; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing signing secret: ${name}"
+              exit 1
+            fi
+          done
+      - name: Decode signing keystore in ephemeral runner
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, base64
+          contents=base64.b64decode(os.environ['VEYLOR_KEYSTORE_BASE64'],validate=True)
+          if len(contents)<200:
+              raise ValueError("Signing keystore is too short")
+          target=pathlib.Path("android/app/veylor-release.jks")
+          target.write_bytes(contents)
+          target.chmod(0o600)
+          print("Temporary signing keystore ready")
+          PY
+      - name: Configure Android release signing
+        run: python3 tool/configure_android_signing.py
+      - name: Build signed APK
+        run: flutter build apk --release
+      - name: Verify signed APK
+        shell: bash
+        run: |
+          file=build/app/outputs/flutter-apk/app-release.apk
+          test -s "$file" || exit 1
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          signer=$(find "$sdk/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          if [[ -z "$signer" ]]; then echo "::error::Android apksigner missing"; exit 1; fi
+          "$signer" verify "$file"
+          echo "Signed release APK verified"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Veylor-v0.3.3-Android-signed
+          path: apps/client/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove private key from runner directory
+        if: always()
+        shell: bash
+        run: rm -f android/app/veylor-release.jks

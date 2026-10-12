@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "platform": "android",
+  "channel": "beta",
+  "version": "0.3.0",
+  "build": 4,
+  "title": "Veylor V0.3 — PostgreSQL",
+  "notes": "Novo servidor PostgreSQL para contas e mensagens. Instale a V0.3 e crie uma conta nova: a base antiga não foi migrada. APK de teste com instalação manual.",
+  "download_url": "https://github.com/Night0231-creator/discord2/actions/runs/38275436629",
+  "distribution": "github_actions_private",
+  "installation": "manual",
+  "mandatory": false
+}

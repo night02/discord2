@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "platform": "windows",
+  "channel": "beta",
+  "version": "0.3.1",
+  "build": 5,
+  "title": "Veylor V0.3.1 — Instalador Windows",
+  "notes": "Instalador Windows com atalhos e desinstalação. Esta versão é beta e ainda não possui assinatura digital.",
+  "download_url": "https://github.com/Night0231-creator/discord2/actions/runs/38278251122",
+  "distribution": "github_actions_private",
+  "installation": "manual",
+  "mandatory": false
+}

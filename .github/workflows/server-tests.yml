@@ -1,0 +1,46 @@
+name: API tests
+on:
+  push:
+  pull_request:
+jobs:
+  sqlite:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+        working-directory: apps/server
+      - run: node --check apps/server/server.mjs && node --check apps/server/sqlite-server.mjs && node --check apps/server/pg-server.mjs && node --check apps/server/pg-routes.mjs
+      - run: node --test apps/server/test/api.test.mjs apps/server/test/v02.test.mjs apps/server/test/two_clients.test.mjs apps/server/test/updates.test.mjs apps/server/test/startup.test.mjs apps/server/test/reconnect.test.mjs
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_USER: veylor_ci
+          POSTGRES_DB: veylor_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U veylor_ci -d veylor_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgres://veylor_ci:ci-test-password@127.0.0.1:5432/veylor_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-audit --no-fund
+        working-directory: apps/server
+      - run: node --check apps/server/scripts/import-sqlite.mjs
+      - run: node --test apps/server/test/import.test.mjs
+      - run: node --test apps/server/test/postgres.test.mjs
