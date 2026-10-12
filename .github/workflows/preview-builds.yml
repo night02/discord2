@@ -88,6 +88,28 @@ jobs:
         run: |
           & "$env:GITHUB_WORKSPACE/tools/sign-windows.ps1" -FilePath "dist/Veylor-v0.3.5-Setup-Windows-x64.exe"
           if ($LASTEXITCODE -ne 0) { throw "Windows installer signing failed" }
+      - name: Smoke-test unsigned or signed Windows installer (install and uninstall)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Resolve-Path "dist/Veylor-v0.3.5-Setup-Windows-x64.exe").Path
+          $compiled = (Resolve-Path "build/windows/x64/runner/Release/veylor.exe").Path
+          $installRoot = Join-Path $env:RUNNER_TEMP 'Veylor-Installer-Smoke'
+          $installLog = Join-Path $env:RUNNER_TEMP 'veylor-installer-smoke.log'
+          if (Test-Path $installRoot) { Remove-Item $installRoot -Recurse -Force }
+          & $setup '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART' "/DIR=$installRoot" "/LOG=$installLog"
+          if ($LASTEXITCODE -ne 0) { throw "Installer failed: $LASTEXITCODE" }
+          $installed = Join-Path $installRoot 'veylor.exe'
+          if (-not (Test-Path $installed)) { throw 'Installed application EXE missing.' }
+          $expected = (Get-FileHash $compiled -Algorithm SHA256).Hash
+          $actual = (Get-FileHash $installed -Algorithm SHA256).Hash
+          if ($expected -ne $actual) { throw 'Installed EXE hash differs from release build.' }
+          $uninstaller = Join-Path $installRoot 'unins000.exe'
+          if (-not (Test-Path $uninstaller)) { throw 'Uninstaller is missing.' }
+          & $uninstaller '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART'
+          if ($LASTEXITCODE -ne 0) { throw "Uninstaller failed: $LASTEXITCODE" }
+          if (Test-Path $installed) { throw 'Uninstaller left application EXE installed.' }
+          Write-Host 'Windows beta installer smoke test passed without requiring a publisher certificate.'
       - name: Record Windows signature status
         shell: pwsh
         run: |
