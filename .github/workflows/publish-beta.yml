@@ -2,102 +2,168 @@ name: Veylor beta Releases
 on:
   pull_request:
     paths:
+      - "apps/client/**"
       - ".github/workflows/publish-beta.yml"
-  workflow_dispatch:
-    inputs:
-      build_run:
-        description: "ID of a successful Veylor V0.3.3 preview builds workflow run"
-        required: true
-        type: string
+      - ".github/workflows/preview-builds.yml"
+  workflow_run:
+    workflows: ["Veylor preview builds"]
+    types: [completed]
 permissions:
   contents: read
 concurrency:
-  group: veylor-beta-v0.3.3
+  group: veylor-beta-${{ github.event.workflow_run.head_sha || github.ref }}
   cancel-in-progress: false
 jobs:
   lint-release:
     name: Validate beta release definition
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Confirm beta version
-        shell: bash
-        run: |
-          grep -q '^version: 0.3.3+7$' apps/client/pubspec.yaml
-          grep -q 'AppVersion "0.3.3"' apps/client/windows-installer.iss
-          grep -q 'Veylor-v0.3.3-Setup-Windows-x64' .github/workflows/preview-builds.yml
-  publish:
-    name: Publish private GitHub prerelease (manual only)
-    if: github.event_name == 'workflow_dispatch'
-    needs: lint-release
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      BUILD_RUN: ${{ inputs.build_run }}
-      RELEASE_TAG: v0.3.3-beta
-    steps:
-      - uses: actions/checkout@v4
-      - name: Verify requested workflow and release tag
+      - name: Verify matching application and installer versions
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "$BUILD_RUN" =~ ^[0-9]+$ ]]; then
-            echo "::error::Build run must be an integer"
+          version=$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+[0-9]+$/\1/p' apps/client/pubspec.yaml)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid Flutter beta version"
             exit 1
           fi
-          if [[ "$GITHUB_REF_NAME" != "feature/veylor-v0.3.3-stability" ]]; then
-            echo "::error::Run this beta release only on the validated Veylor installer branch"
+          grep -Fq "#define MyAppVersion \"$version\"" apps/client/windows-installer.iss
+          grep -Fq "Veylor-v$version-Setup-Windows-x64" .github/workflows/preview-builds.yml
+          grep -Fq 'name: Veylor preview builds' .github/workflows/preview-builds.yml
+
+  publish:
+    name: Publish verified beta installer and portable builds
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BUILD_RUN: ${{ github.event.workflow_run.id }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - name: Verify main commit, build identity, version and unique release tag
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
+          if [[ "$HEAD_SHA" != "$current_main" ]]; then
+            echo "::error::Build commit is not the current main branch; refusing to publish stale code."
             exit 1
           fi
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::Beta tag already published; release tags are immutable for this workflow"
+          details=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json headBranch,headSha,conclusion,workflowName,event)
+          if ! echo "$details" | jq -e --arg sha "$HEAD_SHA" \
+            '.headBranch == "main" and .headSha == $sha and .conclusion == "success" and .workflowName == "Veylor preview builds" and .event == "push"' > /dev/null; then
+            echo "::error::Expected a successful main push preview build with the exact same commit SHA."
             exit 1
           fi
-          conclusion=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json conclusion --jq '.conclusion')
-          branch=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json headBranch --jq '.headBranch')
-          workflow=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json workflowName --jq '.workflowName')
-          build_sha=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json headSha --jq '.headSha')
-          if [[ "$conclusion" != "success" || "$branch" != "$GITHUB_REF_NAME" ||
-                "$workflow" != "Veylor V0.3.3 preview builds" || "$build_sha" != "$GITHUB_SHA" ]]; then
-            echo "::error::Requires a successful matching V0.3.3 preview workflow from this branch"
+          version=$(sed -nE 's/^version: ([0-9]+\.[0-9]+\.[0-9]+)\+[0-9]+$/\1/p' apps/client/pubspec.yaml)
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid beta version in pubspec.yaml"
             exit 1
           fi
-      - name: Download only verified GitHub Actions artifacts
+          grep -Fq "#define MyAppVersion \"$version\"" apps/client/windows-installer.iss
+          grep -Fq "Veylor-v$version-Setup-Windows-x64" .github/workflows/preview-builds.yml
+          tag="v$version-beta.$BUILD_RUN"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "Release $tag already exists. Nothing will be overwritten."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require Flutter, API and hosted smoke tests on this exact main commit
+        if: steps.metadata.outputs.exists != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 70); do
+            current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
+            if [[ "$current_main" != "$HEAD_SHA" ]]; then
+              echo "::error::Main advanced while checking tests. Do not publish stale packages."
+              exit 1
+            fi
+            approved=0
+            for workflow in "API tests" "Flutter analyze and tests" "Veylor hosted Postgres health"; do
+              runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" \
+                --branch main --commit "$HEAD_SHA" --event push --limit 30 \
+                --json headSha,headBranch,conclusion)
+              if echo "$runs" | jq -e --arg sha "$HEAD_SHA" \
+                'any(.[]; .headSha == $sha and .headBranch == "main" and .conclusion == "success")' > /dev/null; then
+                approved=$((approved + 1))
+              else
+                echo "Waiting for passing workflow: $workflow"
+              fi
+            done
+            if [[ "$approved" == "3" ]]; then
+              echo "All required workflow suites passed on the same SHA."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::At least one required CI workflow did not pass for this main commit."
+          exit 1
+
+      - name: Fetch and validate all four build artifacts
+        if: steps.metadata.outputs.exists != 'true'
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p release-out fetched/setup fetched/windows fetched/linux fetched/android
-          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.3-Setup-Windows-x64" --dir fetched/setup
-          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.3-Windows-x64" --dir fetched/windows
-          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.3-Linux-x64" --dir fetched/linux
-          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.3-Android-debug" --dir fetched/android
-          cp fetched/setup/Veylor-v0.3.3-Setup-Windows-x64.exe release-out/
-          cp fetched/windows/Veylor-v0.3.3-Windows-x64.zip release-out/
-          cp fetched/linux/Veylor-v0.3.3-Linux-x64.tar.gz release-out/
-          cp fetched/android/app-debug.apk release-out/Veylor-v0.3.3-Android-debug-TEST-ONLY.apk
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v$VERSION-Setup-Windows-x64" --dir fetched/setup
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v$VERSION-Windows-x64" --dir fetched/windows
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v$VERSION-Linux-x64" --dir fetched/linux
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v$VERSION-Android-debug" --dir fetched/android
+          cp "fetched/setup/Veylor-v$VERSION-Setup-Windows-x64.exe" release-out/
+          cp "fetched/windows/Veylor-v$VERSION-Windows-x64.zip" release-out/
+          cp "fetched/linux/Veylor-v$VERSION-Linux-x64.tar.gz" release-out/
+          cp fetched/android/app-debug.apk "release-out/Veylor-v$VERSION-Android-debug-TEST-ONLY.apk"
           for file in release-out/*; do test -s "$file" || exit 1; done
+          test "$(head -c 2 "release-out/Veylor-v$VERSION-Setup-Windows-x64.exe")" = "MZ"
+          unzip -t "release-out/Veylor-v$VERSION-Windows-x64.zip" > /dev/null
+          unzip -t "release-out/Veylor-v$VERSION-Android-debug-TEST-ONLY.apk" > /dev/null
+          tar -tzf "release-out/Veylor-v$VERSION-Linux-x64.tar.gz" > /dev/null
           (cd release-out && sha256sum Veylor-* > SHA256SUMS.txt)
-      - name: Publish prerelease with permanent assets
+
+      - name: Publish immutable GitHub beta prerelease
+        if: steps.metadata.outputs.exists != 'true'
+        env:
+          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
+          VERSION: ${{ steps.metadata.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          cat > release-notes.md <<'EOF'
-          ## Veylor V0.3.3 beta
+          current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
+          if [[ "$HEAD_SHA" != "$current_main" ]]; then
+            echo "::error::Main advanced since verification, refusing to release old commit."
+            exit 1
+          fi
+          cat > release-notes.md <<EOF
+          ## Veylor v$VERSION beta
 
-          - Windows: installer and portable package; upgrades are manual.
-          - Linux: portable bundle.
-          - Android: **DEBUG TEST APK ONLY**, NOT a signed release.
-          - SHA256SUMS.txt provides integrity hashes for every asset.
-          - PostgreSQL data are not migrated or modified by this release.
-          - This is a private repository; access requires GitHub authorization.
-          - The Windows installer is not digitally signed yet.
+          Automatically packaged from successful Windows, Linux and Android builds.
+          All required CI workflows passed on commit: $HEAD_SHA.
+
+          - **Windows:** download \`Veylor-v$VERSION-Setup-Windows-x64.exe\` to install, or use the portable ZIP.
+          - **Linux:** complete portable tarball.
+          - **Android:** debug test APK only, **not a signed production release**.
+          - Check \`SHA256SUMS.txt\` to verify the downloaded files.
+          - The Windows installer has no Authenticode publisher certificate yet.
+          - Installation is manual. No unattended updates or backend deployments.
+          - Build source: https://github.com/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN
           EOF
           gh release create "$RELEASE_TAG" release-out/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "Veylor V0.3.3 beta" \
-            --notes-file release-notes.md \
-            --prerelease
+            --repo "$GITHUB_REPOSITORY" --target "$HEAD_SHA" \
+            --title "Veylor v$VERSION beta • build $BUILD_RUN" \
+            --notes-file release-notes.md --prerelease

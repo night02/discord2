@@ -1,4 +1,4 @@
-# Windows fallback for Veylor V0.3.3 when GitHub-hosted runners cannot start.
+# Windows fallback for Veylor V0.3.4 when GitHub-hosted runners cannot start.
 # Requires Flutter stable, Visual Studio C++ desktop workload, Node.js 22+, Inno Setup 6.
 [CmdletBinding()]
 param()
@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $clientRoot = Join-Path $repoRoot "apps\client"
 $serverRoot = Join-Path $repoRoot "apps\server"
-$version = "0.3.3"
+$version = "0.3.4"
 $setupName = "Veylor-v$version-Setup-Windows-x64.exe"
 $zipName = "Veylor-v$version-Windows-x64.zip"
 $releaseDir = Join-Path $clientRoot "build\windows\x64\runner\Release"

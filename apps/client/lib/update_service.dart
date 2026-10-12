@@ -11,15 +11,24 @@ abstract class AppUpdateInfo {
 }
 
 /// Only opens authenticated pages in the project's official private GitHub repo.
-bool isTrustedVeylorDownload(Uri? uri) {
+const officialDownloadsRepository = 'night02/discord2';
+
+/// Only pages owned by the official private repository are valid.
+/// No raw EXE/APK URLs, redirects, URL credentials, non-standard ports or query strings.
+bool isTrustedVeylorDownload(Uri? uri, {String? releaseVersion}) {
   if (uri == null || uri.scheme != 'https' ||
       uri.host != 'github.com' || uri.userInfo.isNotEmpty ||
       uri.hasPort || uri.hasQuery || uri.hasFragment) {
     return false;
   }
-  return RegExp(
-    r'^/Night0231-creator/discord2/(?:actions/runs/[0-9]+|releases/tag/v[0-9]+\.[0-9]+\.[0-9]+-beta)$',
-  ).hasMatch(uri.path);
+  final path = uri.path;
+  if (RegExp(r'^/night02/discord2/actions/runs/[0-9]+$').hasMatch(path)) {
+    return true;
+  }
+  final match=RegExp(
+    r'^/night02/discord2/releases/tag/v([0-9]+\.[0-9]+\.[0-9]+)-beta(?:\.[1-9][0-9]*)?$'
+  ).firstMatch(path);
+  return match != null && (releaseVersion == null || match.group(1) == releaseVersion);
 }
 
 bool _validUpdatePayload(Map<String,dynamic> json, String platform, Uri? uri) {
@@ -34,7 +43,7 @@ bool _validUpdatePayload(Map<String,dynamic> json, String platform, Uri? uri) {
       RegExp(r'^[0-9]+\.[0-9]+\.[0-9]+$').hasMatch(version) &&
       build is int && build > 0 &&
       notes is String && notes.length <= 1500 &&
-      isTrustedVeylorDownload(uri);
+      isTrustedVeylorDownload(uri,releaseVersion:version);
 }
 
 class AndroidUpdate extends AppUpdateInfo {

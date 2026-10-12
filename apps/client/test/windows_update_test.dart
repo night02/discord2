@@ -10,7 +10,7 @@ void main() {
     'version':'0.3.1',
     'build':5,
     'notes':'Instalador de teste',
-    'download_url':'https://github.com/Night0231-creator/discord2/actions/runs/38278251122',
+    'download_url':'https://github.com/night02/discord2/actions/runs/38278251122',
   };
 
   test('Windows update accepts official GitHub Actions run',(){
@@ -22,24 +22,41 @@ void main() {
   });
 
   test('Windows update accepts official beta GitHub Release',(){
-    final value=windows()..['download_url']='https://github.com/Night0231-creator/discord2/releases/tag/v0.3.1-beta';
+    final value=windows()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.1-beta';
     final info=WindowsUpdate.fromJson(value);
-    expect(info.downloadUrl.path,'/Night0231-creator/discord2/releases/tag/v0.3.1-beta');
+    expect(info.downloadUrl.path,'/night02/discord2/releases/tag/v0.3.1-beta');
   });
 
   test('Windows update never executes untrusted download addresses',(){
     for(final uri in [
-      'http://github.com/Night0231-creator/discord2/actions/runs/38278251122',
+      'http://github.com/night02/discord2/actions/runs/38278251122',
       'https://evil.example.com/installer.exe',
-      'https://github.com.evil.com/Night0231-creator/discord2/releases/tag/v0.3.1-beta',
-      'https://github.com/Night0231-creator/discord2/releases/download/v0.3.1-beta/installer.exe',
-      'https://github.com/Night0231-creator/discord2/actions/runs/38278251122?url=https://evil.example',
-      'https://attacker:pass@github.com/Night0231-creator/discord2/actions/runs/38278251122',
-      'https://github.com:8443/Night0231-creator/discord2/actions/runs/38278251122',
-      'https://github.com/Night0231-creator/discord2/releases/tag/random',
+      'https://github.com.evil.com/night02/discord2/releases/tag/v0.3.1-beta',
+      'https://github.com/night02/discord2/releases/download/v0.3.1-beta/installer.exe',
+      'https://github.com/night02/discord2/actions/runs/38278251122?url=https://evil.example',
+      'https://attacker:pass@github.com/night02/discord2/actions/runs/38278251122',
+      'https://github.com:8443/night02/discord2/actions/runs/38278251122',
+      'https://github.com/night02/discord2/releases/tag/random',
     ]) {
       final value=windows()..['download_url']=uri;
       expect(()=>WindowsUpdate.fromJson(value),throwsFormatException,reason:uri);
+    }
+  });
+
+  test('block former repository and mismatched release version',(){
+    final former=windows()..['download_url']='https://github.com/Night0231-creator/discord2/actions/runs/38278251122';
+    expect(()=>WindowsUpdate.fromJson(former),throwsFormatException);
+    final mismatched=windows()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.4-beta';
+    expect(()=>WindowsUpdate.fromJson(mismatched),throwsFormatException);
+    final valid=windows()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.1-beta';
+    expect(WindowsUpdate.fromJson(valid).version,'0.3.1');
+  });
+  test('versioned public beta links accept numeric revision but refuse malformed tags',(){
+    final numbered=windows()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.1-beta.3920234';
+    expect(WindowsUpdate.fromJson(numbered).version,'0.3.1');
+    for (final suffix in ['foo','0','1?unsafe=1','1/extra']) {
+      final invalid=windows()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.1-beta.$suffix';
+      expect(()=>WindowsUpdate.fromJson(invalid),throwsFormatException,reason:suffix);
     }
   });
 
