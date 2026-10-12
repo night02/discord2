@@ -8,9 +8,15 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'update_service.dart';
 import 'windows_update_download.dart';
+import 'update_health.dart';
+import 'update_diagnostics.dart';
 import 'api_endpoint.dart';
 
-void main() => runApp(const VeylorApp());
+List<String> _startupArguments = const [];
+void main(List<String> args) {
+  _startupArguments = List<String>.unmodifiable(args);
+  runApp(const VeylorApp());
+}
 const accent = Color(0xFF7565EE);
 const surface = Color(0xFF202127);
 const sidebar = Color(0xFF15161B);
@@ -78,13 +84,33 @@ class _HomeState extends State<Home> {
   int socketEpoch=0;
   final storage=const FlutterSecureStorage();
   bool restoring=true,realtime=false,checkingUpdate=false,sessionMoved=false;
+  String runningVersion = 'Veylor';
   String? nick,serverId,channelId,dmId,error;
   List<Map<String,dynamic>> dms=[];
   bool signup=false,busy=false;
   List<Map<String,dynamic>> servers=[],channels=[],messages=[];
   int cursor=0;
   @override
-  void initState(){super.initState();if(widget.sessionRestorationEnabled){restoreSession();}else{restoring=false;}}
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => runningVersion = 'V${info.version}');
+    }).catchError((Object _) {});
+    if (widget.sessionRestorationEnabled) {
+      restoreSession();
+    } else {
+      restoring = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_reportAppReady());
+      });
+    }
+  }
+  Future<void> _reportAppReady() async {
+    // A successful first frame + completed session restoration is the minimum
+    // startup proof. Errors in diagnostics never block application startup.
+    await StartupHandshake.signal(_startupArguments);
+    await UpdateDiagnostics.add('app_startup_ready');
+  }
   @override
   void dispose() {
     stopRealtime();
@@ -121,8 +147,10 @@ class _HomeState extends State<Home> {
       if(mounted){
         setState(()=>restoring=false);
         if(Platform.isAndroid||Platform.isWindows){
-          WidgetsBinding.instance.addPostFrameCallback((_){
-            if(mounted)checkForUpdates(silent:true);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            unawaited(_reportAppReady());
+            checkForUpdates(silent: true);
           });
         }
       }
@@ -188,6 +216,7 @@ class _HomeState extends State<Home> {
     final downloader=VeylorWindowsDownloader();
     final progress=ValueNotifier<double>(0);
     bool cancelled=false;
+    final downloadMessage = ValueNotifier<String>('Preparando download...');
     WindowsUpdatePackage? staged;
     final progressDialog=showDialog<void>(
       context:context, barrierDismissible:false,
@@ -198,15 +227,28 @@ class _HomeState extends State<Home> {
             builder:(_,value,__)=>Column(children:[
               LinearProgressIndicator(value:value),
               const SizedBox(height:12),
-              Text('${(value*100).toStringAsFixed(0)}% — verificaremos o SHA-256 antes de instalar.')
+              Text('${(value*100).toStringAsFixed(0)}% — verificaremos o SHA-256 antes de instalar.'),
+              ValueListenableBuilder<String>(
+                valueListenable: downloadMessage,
+                builder: (_, message, __) => Text(message,
+                  style: const TextStyle(fontSize: 12)),
+              )
             ]))
         ]),
-        actions:[TextButton(onPressed:()=>cancelled=true,child:const Text('Cancelar download'))],
+        actions:[TextButton(onPressed:() {
+          cancelled = true;
+          downloader.cancel();
+        },child:const Text('Cancelar download'))],
       ));
     try {
       staged=await downloader.prepare(update,
-        cancelled:()=>cancelled,
-        onProgress:(received,total){if(total>0)progress.value=received/total;});
+        cancelled: () => cancelled,
+        onRetry: (attempt) {
+          downloadMessage.value = 'Reconectando... tentativa ${attempt + 1}/3';
+        },
+        onProgress: (received,total) {
+          if (total > 0) progress.value = received / total;
+        });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content:Text('Atualização recusada: $e')));
@@ -216,6 +258,7 @@ class _HomeState extends State<Home> {
       if (mounted) Navigator.of(context,rootNavigator:true).pop();
       await progressDialog;
       progress.dispose();
+      downloadMessage.dispose();
     }
     final package=staged;
     if (!mounted || cancelled) {
@@ -243,6 +286,7 @@ class _HomeState extends State<Home> {
         FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Instalar e reiniciar'))
       ]));
     if(approved!=true){await package.discard();return;}
+    await UpdateDiagnostics.add('install_confirmed');
     try {
       final currentExe=File(Platform.resolvedExecutable);
       if(currentExe.uri.pathSegments.last.toLowerCase()!='veylor.exe') {
@@ -258,7 +302,7 @@ class _HomeState extends State<Home> {
       final copy=await helper.copy('${package.directory.path}${Platform.pathSeparator}veylor-updater.exe');
       await Process.start(copy.path,[
         '--installer',installer.path,
-        '--sha256',staged.sha256,
+        '--sha256',package.sha256,
         '--install-dir',currentExe.parent.path,
         '--parent-pid','$pid',
         '--target-version',package.version,
@@ -266,7 +310,7 @@ class _HomeState extends State<Home> {
       // The separate helper waits until this Windows process has fully exited.
       exit(0);
     } catch(e){
-      await staged.discard();
+      await package.discard();
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content:Text('Instalação não iniciada: $e')));
     }
@@ -619,10 +663,24 @@ class _HomeState extends State<Home> {
         leading:const Icon(Icons.system_update_alt),
         title:const Text('Verificar atualização'),
         onTap:()=>checkForUpdates()),
+      if (Platform.isWindows) ListTile(
+        leading: const Icon(Icons.folder_open_outlined),
+        title: const Text('Logs de atualização'),
+        onTap: () async {
+          try {
+            final folder = UpdateDiagnostics.logDirectory;
+            await folder.create(recursive: true);
+            await Process.start('explorer.exe', [folder.path],
+              mode: ProcessStartMode.detached);
+          } catch (_) {
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Não foi possível abrir a pasta de logs.')));
+          }
+        }),
       ListTile(leading:const Icon(Icons.groups_2_outlined),title:const Text('Membros'),onTap:manageMembers),
       Container(color:sidebar,child:ListTile(
         leading:const CircleAvatar(backgroundColor:accent,child:Icon(Icons.person)),
-        title:Text(nick??'Conta'),subtitle:Text(realtime?'V0.3.4 • Online':'V0.3.4 • Reconectando'),
+        title:Text(nick??'Conta'),subtitle:Text('$runningVersion • ${realtime ? 'Online' : 'Reconectando'}'),
         trailing:IconButton(tooltip:'Sair',icon:const Icon(Icons.logout),onPressed:() async {
           stopRealtime();
           try{await api.request('POST','/api/logout');}catch(_){}
