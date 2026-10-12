@@ -508,7 +508,7 @@ class _HomeState extends State<Home> {
       progressVisible=true;
       final modal=showDialog<void>(
         context:context,barrierDismissible:false,
-        builder:(ctx)=>AlertDialog(
+        builder:(ctx)=>PopScope(canPop:false,child:AlertDialog(
           title:const Text('Entrar com Discord'),
           content:const Column(mainAxisSize:MainAxisSize.min,children:[
             CircularProgressIndicator(),
@@ -520,7 +520,7 @@ class _HomeState extends State<Home> {
             progressVisible=false;
             Navigator.of(ctx).pop();
           },child:const Text('Cancelar'))],
-        ));
+        )));
       for(var attempt=0;attempt<100&&!cancelled&&mounted;attempt++){
         await Future<void>.delayed(const Duration(seconds:2));
         if(cancelled||!mounted)break;
@@ -528,6 +528,8 @@ class _HomeState extends State<Home> {
           'request_id':authorization.requestId,
           'poll_secret':authorization.pollSecret,
         });
+        // Cancellation may happen while the network request is in flight.
+        if(cancelled||!mounted)break;
         if(result['status']!='ready')continue;
         final token=result['token'],profile=result['user'];
         if(token is! String||!RegExp(r'^[a-f0-9]{64}
