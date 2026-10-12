@@ -217,19 +217,20 @@ class _HomeState extends State<Home> {
       await progressDialog;
       progress.dispose();
     }
+    final package=staged!;
     if (!mounted || cancelled) {
-      await staged.discard();
+      await package.discard();
       return;
     }
-    final installer=staged.installer;
+    final installer=package.installer;
     final current=(await PackageInfo.fromPlatform()).version;
     final approved=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
-      title:Text('Instalar Veylor ${staged!.version}?'),
+      title:Text('Instalar Veylor ${package.version}?'),
       content:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
         Text('Versão atual: $current'),
         Text('Instalador: ${installer.path.split(Platform.pathSeparator).last}'),
         const SizedBox(height:8),
-        Text('SHA-256 verificado: ${staged.sha256.substring(0,16)}…',
+        Text('SHA-256 verificado: ${package.sha256.substring(0,16)}…',
           style:const TextStyle(fontSize:12)),
         const SizedBox(height:12),
         const Text('Ao confirmar, a Veylor será fechada e a instalação começará. '
@@ -241,7 +242,7 @@ class _HomeState extends State<Home> {
         TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Agora não')),
         FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Instalar e reiniciar'))
       ]));
-    if(approved!=true){await staged.discard();return;}
+    if(approved!=true){await package.discard();return;}
     try {
       final currentExe=File(Platform.resolvedExecutable);
       if(currentExe.uri.pathSegments.last.toLowerCase()!='veylor.exe') {
@@ -251,13 +252,13 @@ class _HomeState extends State<Home> {
       if(!await helper.exists()) {
         throw const FileSystemException('Componente de atualização não encontrado');
       }
-      final copy=await helper.copy('${staged.directory.path}${Platform.pathSeparator}veylor-updater.exe');
+      final copy=await helper.copy('${package.directory.path}${Platform.pathSeparator}veylor-updater.exe');
       await Process.start(copy.path,[
         '--installer',installer.path,
         '--sha256',staged.sha256,
         '--install-dir',currentExe.parent.path,
         '--parent-pid','$pid',
-        '--target-version',staged.version,
+        '--target-version',package.version,
       ],mode:ProcessStartMode.detached);
       // The separate helper waits until this Windows process has fully exited.
       exit(0);
