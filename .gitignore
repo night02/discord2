@@ -15,3 +15,14 @@ apps/client/.packages
 *.apk
 *.aab
 *.ipa
+# Never commit private signing certificates or credentials.
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.pem
+*.key
+key.properties
+*.asc
+.secrets/
+apps/client/android/local.properties
