@@ -31,6 +31,13 @@ void main(){
     final wrongTag=valid()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.4-beta';
     expect(()=>AndroidUpdate.fromJson(wrongTag),throwsFormatException);
   });
+  test('Android allows numbered same-version prereleases only',(){
+    final good=valid()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.2.0-beta.1';
+    expect(AndroidUpdate.fromJson(good).downloadUrl.host,'github.com');
+    final old=valid()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.4-beta.1';
+    expect(()=>AndroidUpdate.fromJson(old),throwsFormatException);
+  });
+
   test('Android rejects automatic installs and links on nonstandard HTTPS ports',(){
     final automatic=valid()..['installation']='automatic';
     expect(()=>AndroidUpdate.fromJson(automatic),throwsFormatException);
