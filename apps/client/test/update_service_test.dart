@@ -5,7 +5,7 @@ void main(){
   Map<String,dynamic> valid()=>{
     'schema':1,'platform':'android','channel':'beta',
     'version':'0.2.0','build':2,'notes':'Teste','installation':'manual',
-    'download_url':'https://github.com/Night0231-creator/discord2/actions/runs/38262623141'
+    'download_url':'https://github.com/night02/discord2/actions/runs/38262623141'
   };
   test('parse valid update and compare build numbers',(){
     final data=AndroidUpdate.fromJson(valid());
@@ -16,19 +16,25 @@ void main(){
   test('block injected download links and unsupported schemes',(){
     final fake=valid()..['download_url']='https://example.org/app.apk';
     expect(()=>AndroidUpdate.fromJson(fake),throwsFormatException);
-    final http=valid()..['download_url']='http://github.com/Night0231-creator/discord2/actions/runs/38262623141';
+    final http=valid()..['download_url']='http://github.com/night02/discord2/actions/runs/38262623141';
     expect(()=>AndroidUpdate.fromJson(http),throwsFormatException);
-    final query=valid()..['download_url']='https://github.com/Night0231-creator/discord2/actions/runs/38262623141?token=123';
+    final query=valid()..['download_url']='https://github.com/night02/discord2/actions/runs/38262623141?token=123';
     expect(()=>AndroidUpdate.fromJson(query),throwsFormatException);
   });
   test('official GitHub beta release page is a valid Android update location',(){
-    final release=valid()..['download_url']='https://github.com/Night0231-creator/discord2/releases/tag/v0.3.2-beta';
+    final release=valid()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.2.0-beta';
     expect(AndroidUpdate.fromJson(release).downloadUrl.host,'github.com');
+  });
+  test('old repository and version-spoofed beta tag are rejected',(){
+    final previous=valid()..['download_url']='https://github.com/Night0231-creator/discord2/actions/runs/38262623141';
+    expect(()=>AndroidUpdate.fromJson(previous),throwsFormatException);
+    final wrongTag=valid()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.4-beta';
+    expect(()=>AndroidUpdate.fromJson(wrongTag),throwsFormatException);
   });
   test('Android rejects automatic installs and links on nonstandard HTTPS ports',(){
     final automatic=valid()..['installation']='automatic';
     expect(()=>AndroidUpdate.fromJson(automatic),throwsFormatException);
-    final port=valid()..['download_url']='https://github.com:8443/Night0231-creator/discord2/actions/runs/38262623141';
+    final port=valid()..['download_url']='https://github.com:8443/night02/discord2/actions/runs/38262623141';
     expect(()=>AndroidUpdate.fromJson(port),throwsFormatException);
   });
     test('reject non-android and incorrect version numbers',(){
