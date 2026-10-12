@@ -33,6 +33,14 @@ test('autenticação, isolamento, convites, mensagens e controles LiveKit', {tim
   assert.equal(b.status,201);
   const logged=await req('/api/login',{method:'POST',body:{username:'alice_test',password:'senha-super-segura-123'}});
   assert.equal(logged.status,200);
+  const unauthenticatedStatus=await req('/api/integrations/status');
+  assert.equal(unauthenticatedStatus.status,401,'feature status must require a session');
+  const readiness=await req('/api/integrations/status',{token:a.token});
+  assert.equal(readiness.status,200);
+  assert.deepEqual(readiness.discord,{configured:false});
+  assert.deepEqual(readiness.livekit,{configured:false});
+  assert.deepEqual(Object.keys(readiness).sort(),['discord','livekit','status'].sort());
+
   const channels=await req('/api/servers/'+a.server.id+'/channels',{token:a.token});
   const textChannel=channels.channels.find(c=>c.type==='text');
   const voiceChannel=channels.channels.find(c=>c.type==='voice');
