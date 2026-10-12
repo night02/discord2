@@ -26,7 +26,90 @@ bool isTrustedVeylorDownload(Uri? uri, {String? releaseVersion}) {
     return true;
   }
   final match=RegExp(
-    r'^/night02/discord2/releases/tag/v([0-9]+\.[0-9]+\.[0-9]+)-beta$',
+    r'^/night02/discord2/releases/tag/v([0-9]+\.[0-9]+\.[0-9]+)-beta(?:\.[1-9][0-9]*)?,
+  ).firstMatch(path);
+  return match != null && (releaseVersion == null || match.group(1) == releaseVersion);
+}
+
+bool _validUpdatePayload(Map<String,dynamic> json, String platform, Uri? uri) {
+  final version = json['version'];
+  final build = json['build'];
+  final notes = json['notes'];
+  return json['schema'] == 1 &&
+      json['platform'] == platform &&
+      json['channel'] == 'beta' &&
+      json['installation'] == 'manual' &&
+      version is String &&
+      RegExp(r'^[0-9]+\.[0-9]+\.[0-9]+$').hasMatch(version) &&
+      build is int && build > 0 &&
+      notes is String && notes.length <= 1500 &&
+      isTrustedVeylorDownload(uri,releaseVersion:version);
+}
+
+class AndroidUpdate extends AppUpdateInfo {
+  const AndroidUpdate({
+    required this.version,
+    required this.build,
+    required this.notes,
+    required this.downloadUrl,
+  });
+
+  @override
+  final String version;
+  @override
+  final int build;
+  @override
+  final String notes;
+  @override
+  final Uri downloadUrl;
+
+  factory AndroidUpdate.fromJson(Map<String,dynamic> json) {
+    final value = json['download_url'];
+    final url = value is String ? Uri.tryParse(value) : null;
+    if (!_validUpdatePayload(json, 'android', url)) {
+      throw const FormatException('Metadados de atualização Android inválidos');
+    }
+    return AndroidUpdate(
+      version: json['version'] as String,
+      build: json['build'] as int,
+      notes: json['notes'] as String,
+      downloadUrl: url!,
+    );
+  }
+}
+
+class WindowsUpdate extends AppUpdateInfo {
+  const WindowsUpdate({
+    required this.version,
+    required this.build,
+    required this.notes,
+    required this.downloadUrl,
+  });
+
+  @override
+  final String version;
+  @override
+  final int build;
+  @override
+  final String notes;
+  @override
+  final Uri downloadUrl;
+
+  factory WindowsUpdate.fromJson(Map<String,dynamic> json) {
+    final value = json['download_url'];
+    final url = value is String ? Uri.tryParse(value) : null;
+    if (!_validUpdatePayload(json, 'windows', url)) {
+      throw const FormatException('Metadados de atualização Windows inválidos');
+    }
+    return WindowsUpdate(
+      version: json['version'] as String,
+      build: json['build'] as int,
+      notes: json['notes'] as String,
+      downloadUrl: url!,
+    );
+  }
+}
+,
   ).firstMatch(path);
   return match != null && (releaseVersion == null || match.group(1) == releaseVersion);
 }
