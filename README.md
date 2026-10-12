@@ -56,7 +56,7 @@ Para o Android e outros computadores use uma URL HTTPS do backend acessível pel
 ## Integração e publicação
 
 - PRs permanecem em rascunho até concluir testes Flutter, API SQLite/PostgreSQL, verificação HTTPS da API hospedada e os builds Windows/Linux/Android.
-- O workflow de **GitHub Releases** publica apenas **manualmente**, a partir do **commit testado no branch `main`**. O branch `main` gera seus próprios builds e checagens para garantir o mesmo SHA.
+- O workflow **Veylor preview builds** compila Windows (`.exe` e ZIP), Android (APK debug) e Linux ao atualizar o código do cliente em `main`. **Veylor beta Releases** cria automaticamente uma *prerelease* numerada para cada build bem-sucedido, apenas quando Flutter, API SQLite/PostgreSQL e teste hospedado também passarem no MESMO SHA. Publicações nunca fazem deploy no Render. Os arquivos ficam em [Releases](https://github.com/night02/discord2/releases).
 - A aplicação verifica apenas links HTTPS de `github.com/night02/discord2/actions/runs/...` ou `github.com/night02/discord2/releases/tag/vX.Y.Z-beta`; tags devem corresponder à versão anunciada.
 - Somente após conferir os artefatos e a aplicação em Windows e Android reais, atualizar os manifestos da API no Render.
 - O backend hospedado e o banco PostgreSQL são ambientes separados do ciclo de CI. Nenhum merge de código, por si só, deve apagar ou migrar dados do servidor.
