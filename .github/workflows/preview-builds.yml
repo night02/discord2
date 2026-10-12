@@ -216,6 +216,8 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create --project-name veylor --platforms=android .
+      - name: Apply Veylor launcher icon on Android
+        run: python3 tool/prepare_brand_android.py
       - run: flutter pub get
       - run: flutter build apk --debug
       - uses: actions/upload-artifact@v4
