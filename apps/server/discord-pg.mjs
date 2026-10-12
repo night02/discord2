@@ -22,7 +22,7 @@ export function pgDiscordAdapter() {
         await client.query('SELECT pg_advisory_xact_lock(hashtext($1))',[discordId]);
         const found=(await client.query('SELECT user_id FROM discord_accounts WHERE discord_id=$1',[discordId])).rows[0];
         if(found)return found.user_id;
-        const id=randomUUID(),username='dc_'+discordId;
+        const id=randomUUID(),username='discord_'+randomBytes(8).toString('hex');
         await client.query('INSERT INTO users(id,username,password_hash,created_at) VALUES($1,$2,$3,$4)',
           [id,username,'discord-only',now()]);
         await client.query('INSERT INTO discord_accounts(discord_id,user_id) VALUES($1,$2)',[discordId,id]);
