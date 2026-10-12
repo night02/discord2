@@ -1,0 +1,114 @@
+name: Veylor V0.3.3 preview builds
+on:
+  pull_request:
+    paths:
+      - "apps/client/**"
+      - ".github/workflows/preview-builds.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: preview-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows:
+    name: Windows x64 installer and portable
+    runs-on: windows-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter config --enable-windows-desktop
+      - run: flutter create --project-name veylor --platforms=windows .
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Pack portable Windows bundle
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Veylor-v0.3.3-Windows-x64.zip -Force
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+      - name: Build Windows setup exe
+        shell: pwsh
+        run: |
+          $paths = @(
+            "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+            "C:\Program Files\Inno Setup 6\ISCC.exe"
+          )
+          $compiler = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $compiler) { throw "Inno Setup ISCC.exe not found" }
+          if (-not (Test-Path "build/windows/x64/runner/Release/veylor.exe")) { throw "Veylor exe not found in Windows build" }
+          & $compiler "windows-installer.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed ($LASTEXITCODE)" }
+          if (-not (Test-Path "dist/Veylor-v0.3.3-Setup-Windows-x64.exe")) { throw "Installer not generated" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Veylor-v0.3.3-Setup-Windows-x64
+          path: apps/client/dist/Veylor-v0.3.3-Setup-Windows-x64.exe
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Veylor-v0.3.3-Windows-x64
+          path: apps/client/Veylor-v0.3.3-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 7
+  linux:
+    name: Linux x64 portable
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native desktop dependencies
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev libsecret-1-dev libjsoncpp-dev
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter config --enable-linux-desktop
+      - run: flutter create --project-name veylor --platforms=linux .
+      - run: flutter pub get
+      - run: flutter build linux --release
+      - name: Pack Linux bundle
+        run: tar -C build/linux/x64/release/bundle -czf Veylor-v0.3.3-Linux-x64.tar.gz .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Veylor-v0.3.3-Linux-x64
+          path: apps/client/Veylor-v0.3.3-Linux-x64.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: apps/client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter create --project-name veylor --platforms=android .
+      - run: flutter pub get
+      - run: flutter build apk --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Veylor-v0.3.3-Android-debug
+          path: apps/client/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7

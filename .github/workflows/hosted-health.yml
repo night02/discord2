@@ -1,0 +1,51 @@
+name: Veylor hosted Postgres health
+on:
+  pull_request:
+    paths:
+      - "apps/client/**"
+      - "apps/server/**"
+      - ".github/workflows/hosted-health.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    name: Hosted API read-only smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate external HTTPS, PostgreSQL and denied anonymous access
+        env:
+          API_URL: https://veylor-postgres-staging.onrender.com
+        run: |
+          node --input-type=module <<'EOF'
+          import assert from 'node:assert/strict';
+          const base=process.env.API_URL;
+          const wait=ms=>new Promise(r=>setTimeout(r,ms));
+          let healthy=false;
+          for(let attempt=0;attempt<24;attempt++){
+            try{
+              const response=await fetch(base+'/health',{signal:AbortSignal.timeout(12000)});
+              if(!response.ok) throw new Error('HTTP '+response.status);
+              const result=await response.json();
+              assert.equal(result.status,'ok');
+              assert.equal(result.storage,'postgres','Staging must never use ephemeral SQLite');
+              healthy=true;break;
+            }catch(e){
+              if(attempt===23)throw new Error('No healthy Postgres API: '+e.message);
+              await wait(4000);
+            }
+          }
+          assert.equal(healthy,true);
+          const who=await fetch(base+'/api/me',{signal:AbortSignal.timeout(12000)});
+          assert.equal(who.status,401,'Private profile must require authentication');
+          const releases=await fetch(base+'/api/updates/android',{signal:AbortSignal.timeout(12000)});
+          assert.equal(releases.status,200);
+          const release=await releases.json();
+          assert.equal(release.platform,'android');
+          assert.equal(release.channel,'beta');
+          console.log('Hosted Postgres health, anonymous authorization and Android metadata checks passed.');
+          EOF
