@@ -704,7 +704,7 @@ class _HomeState extends State<Home> {
                 child:SizedBox(height:48,child:Center(
                   child:Text((server['name']?.toString().isNotEmpty??false)
                      ?server['name'].toString().substring(0,1).toUpperCase():'?',
-                    style:const TextStyle(fontSize:20,fontWeight:FontWeight.w700))))))),
+                    style:const TextStyle(fontSize:20,fontWeight:FontWeight.w700)))))))),
       Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),
         child:Tooltip(message:'Criar servidor',child:IconButton.filledTonal(
           onPressed:createServer,icon:const Icon(Icons.add,size:25)))),
