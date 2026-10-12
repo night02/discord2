@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto';
+import {randomUUID,randomBytes} from 'node:crypto';
 import {oauthFail} from './discord-oauth.mjs';
 
 export function sqliteDiscordAdapter(db,{now,newServer,issueToken}) {
