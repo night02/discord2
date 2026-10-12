@@ -252,6 +252,9 @@ class _HomeState extends State<Home> {
       if(!await helper.exists()) {
         throw const FileSystemException('Componente de atualização não encontrado');
       }
+      if(!await File('${currentExe.parent.path}${Platform.pathSeparator}unins000.exe').exists()) {
+        throw const FileSystemException('Instalação portátil detectada. Atualize manualmente usando o GitHub.');
+      }
       final copy=await helper.copy('${package.directory.path}${Platform.pathSeparator}veylor-updater.exe');
       await Process.start(copy.path,[
         '--installer',installer.path,
