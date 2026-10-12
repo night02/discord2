@@ -1,5 +1,5 @@
 import {one,query,transaction} from './pg-db.mjs';
-import {randomUUID,createServer,createSession,now} from './pg-common.mjs';
+import {randomUUID,randomBytes,createServer,createSession,now} from './pg-common.mjs';
 import {oauthFail} from './discord-oauth.mjs';
 
 // DB-backed OAuth state survives a Render process restart or multiple workers.
