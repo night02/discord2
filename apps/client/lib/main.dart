@@ -217,7 +217,7 @@ class _HomeState extends State<Home> {
       await progressDialog;
       progress.dispose();
     }
-    final package=staged!;
+    final package=staged;
     if (!mounted || cancelled) {
       await package.discard();
       return;
