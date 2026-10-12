@@ -65,6 +65,19 @@ jobs:
             echo "::error::Requires a successful matching V0.3.4 preview workflow from this branch"
             exit 1
           fi
+      - name: Require passing Flutter, API and hosted safety checks for this exact commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          for workflow in "API tests" "Flutter analyze and tests" "Veylor hosted Postgres health"; do
+            approved=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" \
+              --commit "$GITHUB_SHA" --limit 20 \
+              --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')
+            if [[ "$approved" -lt 1 ]]; then
+              echo "::error::Missing passing '$workflow' workflow for $GITHUB_SHA"
+              exit 1
+            fi
+          done
       - name: Download only verified GitHub Actions artifacts
         shell: bash
         run: |
