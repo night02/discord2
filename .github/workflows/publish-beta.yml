@@ -136,6 +136,45 @@ jobs:
           tar -tzf "release-out/Veylor-v$VERSION-Linux-x64.tar.gz" > /dev/null
           (cd release-out && sha256sum Veylor-* > SHA256SUMS.txt)
 
+      - name: Collect signed publisher builds when available, and report provenance
+        if: steps.metadata.outputs.exists != 'true'
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v$VERSION-Windows-signature-status" --dir fetched/windows-signature
+          win_state=$(tr -d '\r\n ' < fetched/windows-signature/windows-signing-status.txt)
+          if [[ "$win_state" != "signed" && "$win_state" != "unsigned" ]]; then
+            echo "::error::Unrecognized Windows publisher signature status."
+            exit 1
+          fi
+          echo "WIN_SIGNED=$win_state" >> "$GITHUB_ENV"
+          artifact_names=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN/artifacts?per_page=100" --jq '.artifacts[].name')
+          apk_present=false
+          aab_present=false
+          if printf '%s\n' "$artifact_names" | grep -Fxq "Veylor-v$VERSION-Android-release-APK"; then apk_present=true; fi
+          if printf '%s\n' "$artifact_names" | grep -Fxq "Veylor-v$VERSION-Android-Play-AAB"; then aab_present=true; fi
+          if [[ "$apk_present" != "$aab_present" ]]; then
+            echo "::error::Partial Android signing artifacts. Refusing to publish."
+            exit 1
+          fi
+          if [[ "$apk_present" == "true" ]]; then
+            mkdir -p fetched/signed-apk fetched/signed-aab
+            gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v$VERSION-Android-release-APK" --dir fetched/signed-apk
+            gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v$VERSION-Android-Play-AAB" --dir fetched/signed-aab
+            test -s fetched/signed-apk/app-release.apk
+            test -s fetched/signed-aab/app-release.aab
+            unzip -t fetched/signed-apk/app-release.apk > /dev/null
+            unzip -t fetched/signed-aab/app-release.aab > /dev/null
+            cp fetched/signed-apk/app-release.apk "release-out/Veylor-v$VERSION-Android-signed.apk"
+            cp fetched/signed-aab/app-release.aab "release-out/Veylor-v$VERSION-Android-Play-upload.aab"
+            echo "ANDROID_SIGNED=true" >> "$GITHUB_ENV"
+          else
+            echo "ANDROID_SIGNED=false" >> "$GITHUB_ENV"
+          fi
+          (cd release-out && sha256sum Veylor-* > SHA256SUMS.txt)
+
       - name: Publish immutable GitHub beta prerelease
         if: steps.metadata.outputs.exists != 'true'
         env:
@@ -149,6 +188,8 @@ jobs:
             echo "::error::Main advanced since verification, refusing to release old commit."
             exit 1
           fi
+          if [[ "${ANDROID_SIGNED:-false}" == "true" ]]; then ANDROID_STATUS="Permanent-key APK and Play upload AAB available (verified)"; else ANDROID_STATUS="Not configured (debug only)"; fi
+          if [[ "${WIN_SIGNED:-unsigned}" == "signed" ]]; then WINDOWS_STATUS="Trusted timestamped signature verified"; else WINDOWS_STATUS="UNSIGNED (trusted publisher certificate needed)"; fi
           cat > release-notes.md <<EOF
           ## Veylor v$VERSION beta
 
@@ -157,9 +198,10 @@ jobs:
 
           - **Windows:** download \`Veylor-v$VERSION-Setup-Windows-x64.exe\` to install, or use the portable ZIP.
           - **Linux:** complete portable tarball.
-          - **Android:** debug test APK only, **not a signed production release**.
+          - **Android debug:** TEST ONLY. Install the signed APK if present, not debug.
+          - **Android publisher signing:** $ANDROID_STATUS. Play Console uses the AAB when configured.
           - Check \`SHA256SUMS.txt\` to verify the downloaded files.
-          - The Windows installer has no Authenticode publisher certificate yet.
+          - **Windows Authenticode:** $WINDOWS_STATUS.
           - Installation is manual. No unattended updates or backend deployments.
           - Build source: https://github.com/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN
           EOF
