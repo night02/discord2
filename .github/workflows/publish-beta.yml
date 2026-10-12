@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       build_run:
-        description: "ID of a successful Veylor V0.3.3 preview builds workflow run"
+        description: "ID of a successful Veylor V0.3.4 preview builds workflow run"
         required: true
         type: string
 permissions:
   contents: read
 concurrency:
-  group: veylor-beta-v0.3.3
+  group: veylor-beta-v0.3.4
   cancel-in-progress: false
 jobs:
   lint-release:
@@ -23,9 +23,9 @@ jobs:
       - name: Confirm beta version
         shell: bash
         run: |
-          grep -q '^version: 0.3.3+7$' apps/client/pubspec.yaml
-          grep -q 'AppVersion "0.3.3"' apps/client/windows-installer.iss
-          grep -q 'Veylor-v0.3.3-Setup-Windows-x64' .github/workflows/preview-builds.yml
+          grep -q '^version: 0.3.4+8$' apps/client/pubspec.yaml
+          grep -q 'AppVersion "0.3.4"' apps/client/windows-installer.iss
+          grep -q 'Veylor-v0.3.4-Setup-Windows-x64' .github/workflows/preview-builds.yml
   publish:
     name: Publish private GitHub prerelease (manual only)
     if: github.event_name == 'workflow_dispatch'
@@ -37,7 +37,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       BUILD_RUN: ${{ inputs.build_run }}
-      RELEASE_TAG: v0.3.3-beta
+      RELEASE_TAG: v0.3.4-beta
     steps:
       - uses: actions/checkout@v4
       - name: Verify requested workflow and release tag
@@ -48,7 +48,7 @@ jobs:
             echo "::error::Build run must be an integer"
             exit 1
           fi
-          if [[ "$GITHUB_REF_NAME" != "feature/veylor-v0.3.3-stability" ]]; then
+          if [[ "$GITHUB_REF_NAME" != "feature/veylor-v0.3.4-stability" ]]; then
             echo "::error::Run this beta release only on the validated Veylor installer branch"
             exit 1
           fi
@@ -61,8 +61,8 @@ jobs:
           workflow=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json workflowName --jq '.workflowName')
           build_sha=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json headSha --jq '.headSha')
           if [[ "$conclusion" != "success" || "$branch" != "$GITHUB_REF_NAME" ||
-                "$workflow" != "Veylor V0.3.3 preview builds" || "$build_sha" != "$GITHUB_SHA" ]]; then
-            echo "::error::Requires a successful matching V0.3.3 preview workflow from this branch"
+                "$workflow" != "Veylor V0.3.4 preview builds" || "$build_sha" != "$GITHUB_SHA" ]]; then
+            echo "::error::Requires a successful matching V0.3.4 preview workflow from this branch"
             exit 1
           fi
       - name: Download only verified GitHub Actions artifacts
@@ -70,14 +70,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-out fetched/setup fetched/windows fetched/linux fetched/android
-          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.3-Setup-Windows-x64" --dir fetched/setup
-          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.3-Windows-x64" --dir fetched/windows
-          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.3-Linux-x64" --dir fetched/linux
-          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.3-Android-debug" --dir fetched/android
-          cp fetched/setup/Veylor-v0.3.3-Setup-Windows-x64.exe release-out/
-          cp fetched/windows/Veylor-v0.3.3-Windows-x64.zip release-out/
-          cp fetched/linux/Veylor-v0.3.3-Linux-x64.tar.gz release-out/
-          cp fetched/android/app-debug.apk release-out/Veylor-v0.3.3-Android-debug-TEST-ONLY.apk
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.4-Setup-Windows-x64" --dir fetched/setup
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.4-Windows-x64" --dir fetched/windows
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.4-Linux-x64" --dir fetched/linux
+          gh run download "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --name "Veylor-v0.3.4-Android-debug" --dir fetched/android
+          cp fetched/setup/Veylor-v0.3.4-Setup-Windows-x64.exe release-out/
+          cp fetched/windows/Veylor-v0.3.4-Windows-x64.zip release-out/
+          cp fetched/linux/Veylor-v0.3.4-Linux-x64.tar.gz release-out/
+          cp fetched/android/app-debug.apk release-out/Veylor-v0.3.4-Android-debug-TEST-ONLY.apk
           for file in release-out/*; do test -s "$file" || exit 1; done
           (cd release-out && sha256sum Veylor-* > SHA256SUMS.txt)
       - name: Publish prerelease with permanent assets
@@ -85,7 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           cat > release-notes.md <<'EOF'
-          ## Veylor V0.3.3 beta
+          ## Veylor V0.3.4 beta
 
           - Windows: installer and portable package; upgrades are manual.
           - Linux: portable bundle.
@@ -98,6 +98,6 @@ jobs:
           gh release create "$RELEASE_TAG" release-out/* \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Veylor V0.3.3 beta" \
+            --title "Veylor V0.3.4 beta" \
             --notes-file release-notes.md \
             --prerelease
