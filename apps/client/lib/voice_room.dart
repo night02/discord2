@@ -105,8 +105,8 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
     if(!Platform.isWindows&&!Platform.isMacOS) {
       throw UnsupportedError('Seleção de tela ainda indisponível neste sistema.');
     }
-    final source=await showDialog<lk.DesktopCapturerSource>(
-      context:context,builder:(_)=>const lk.ScreenSelectDialog());
+    final source=await showDialog<dynamic>(
+      context:context,builder:(_)=>lk.ScreenSelectDialog());
     if(source==null)return;
     final permitted=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
       title:const Text('Iniciar transmissão de tela?'),
