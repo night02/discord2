@@ -68,7 +68,9 @@ Future<int> runUpdater(List<String> args) async {
         throw StateError('Installer exit=$code, new version not verified.');
       }
       await record('success version=$version backup=${backup.path}');
-      await Process.start(exe.path, [], mode: ProcessStartMode.detached);
+      if (options['--no-relaunch'] != 'true') {
+        await Process.start(exe.path, [], mode: ProcessStartMode.detached);
+      }
       return 0;
     } on TimeoutException {
       await record('installer-timeout; backup retained at ${backup.path}; automatic restore skipped');
@@ -80,7 +82,7 @@ Future<int> runUpdater(List<String> args) async {
         await backup.rename(installDir.path);
         await record('rollback-completed');
         final old = File('${installDir.path}${Platform.pathSeparator}veylor.exe');
-        if (await old.exists()) {
+        if (await old.exists() && options['--no-relaunch'] != 'true') {
           await Process.start(old.path, [], mode: ProcessStartMode.detached);
         }
         return 95;
