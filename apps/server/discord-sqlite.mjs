@@ -19,7 +19,7 @@ export function sqliteDiscordAdapter(db,{now,newServer,issueToken}) {
     identityUser:async discordId=>tx(()=>{
       const exists=db.prepare('SELECT user_id FROM discord_accounts WHERE discord_id=?').get(discordId);
       if(exists)return exists.user_id;
-      const id=randomUUID(), username='dc_'+discordId;
+      const id=randomUUID(), username='discord_'+randomBytes(8).toString('hex');
       db.prepare('INSERT INTO users VALUES(?,?,?,?)').run(id,username,'discord-only',now());
       db.prepare('INSERT INTO discord_accounts(discord_id,user_id) VALUES(?,?)').run(discordId,id);
       newServer(id,'Meu servidor');
