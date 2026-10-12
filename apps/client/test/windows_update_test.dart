@@ -51,6 +51,15 @@ void main() {
     final valid=windows()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.1-beta';
     expect(WindowsUpdate.fromJson(valid).version,'0.3.1');
   });
+  test('versioned public beta links accept numeric revision but refuse malformed tags',(){
+    final numbered=windows()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.1-beta.3920234';
+    expect(WindowsUpdate.fromJson(numbered).version,'0.3.1');
+    for (final suffix in ['foo','0','1?unsafe=1','1/extra']) {
+      final invalid=windows()..['download_url']='https://github.com/night02/discord2/releases/tag/v0.3.1-beta.$suffix';
+      expect(()=>WindowsUpdate.fromJson(invalid),throwsFormatException,reason:suffix);
+    }
+  });
+
   test('Windows update refuses other platforms, old schema and auto-install',(){
     final android=windows()..['platform']='android';
     expect(()=>WindowsUpdate.fromJson(android),throwsFormatException);
