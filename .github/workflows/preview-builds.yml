@@ -33,6 +33,13 @@ jobs:
       - run: flutter config --enable-windows-desktop
       - run: flutter create --project-name veylor --platforms=windows .
       - run: flutter pub get
+      - name: Validate Windows signing helper syntax before packaging
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE/tools/sign-windows.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { throw "Invalid Windows signing helper PowerShell syntax." }
       - run: flutter build windows --release
       - name: Authenticode sign Windows app if publisher credentials exist
         id: win-app-sign
