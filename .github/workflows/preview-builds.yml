@@ -33,10 +33,36 @@ jobs:
       - run: flutter config --enable-windows-desktop
       - run: flutter create --project-name veylor --platforms=windows .
       - run: flutter pub get
+      - name: Validate Windows signing helper syntax before packaging
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE/tools/sign-windows.ps1", [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { throw "Invalid Windows signing helper PowerShell syntax." }
       - run: flutter build windows --release
+      - name: Authenticode sign Windows app if publisher credentials exist
+        id: win-app-sign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          VEYLOR_WINDOWS_PFX_BASE64: ${{ secrets.VEYLOR_WINDOWS_PFX_BASE64 }}
+          VEYLOR_WINDOWS_PFX_PASSWORD: ${{ secrets.VEYLOR_WINDOWS_PFX_PASSWORD }}
+        run: |
+          if (-not $env:VEYLOR_WINDOWS_PFX_BASE64 -and -not $env:VEYLOR_WINDOWS_PFX_PASSWORD) {
+            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Warning "Windows signing credentials not configured: output is UNSIGNED beta."
+          } else {
+            if (-not $env:VEYLOR_WINDOWS_PFX_BASE64 -or -not $env:VEYLOR_WINDOWS_PFX_PASSWORD) {
+              throw "Partial Windows signing credentials. Both certificate and password are required."
+            }
+            & "$env:GITHUB_WORKSPACE/tools/sign-windows.ps1" -FilePath "build/windows/x64/runner/Release/veylor.exe"
+            if ($LASTEXITCODE -ne 0) { throw "Windows app signing failed" }
+            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
       - name: Pack portable Windows bundle
         shell: pwsh
-        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Veylor-v0.3.4-Windows-x64.zip -Force
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Veylor-v0.3.5-Windows-x64.zip -Force
       - name: Install Inno Setup compiler
         shell: pwsh
         run: choco install innosetup --yes --no-progress
@@ -52,17 +78,59 @@ jobs:
           if (-not (Test-Path "build/windows/x64/runner/Release/veylor.exe")) { throw "Veylor exe not found in Windows build" }
           & $compiler "windows-installer.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed ($LASTEXITCODE)" }
-          if (-not (Test-Path "dist/Veylor-v0.3.4-Setup-Windows-x64.exe")) { throw "Installer not generated" }
+          if (-not (Test-Path "dist/Veylor-v0.3.5-Setup-Windows-x64.exe")) { throw "Installer not generated" }
+      - name: Authenticode sign Windows installer if app is signed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.win-app-sign.outputs.signed == 'true'
+        shell: pwsh
+        env:
+          VEYLOR_WINDOWS_PFX_BASE64: ${{ secrets.VEYLOR_WINDOWS_PFX_BASE64 }}
+          VEYLOR_WINDOWS_PFX_PASSWORD: ${{ secrets.VEYLOR_WINDOWS_PFX_PASSWORD }}
+        run: |
+          & "$env:GITHUB_WORKSPACE/tools/sign-windows.ps1" -FilePath "dist/Veylor-v0.3.5-Setup-Windows-x64.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer signing failed" }
+      - name: Smoke-test unsigned or signed Windows installer (install and uninstall)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Resolve-Path "dist/Veylor-v0.3.5-Setup-Windows-x64.exe").Path
+          $compiled = (Resolve-Path "build/windows/x64/runner/Release/veylor.exe").Path
+          $installRoot = Join-Path $env:RUNNER_TEMP 'Veylor-Installer-Smoke'
+          $installLog = Join-Path $env:RUNNER_TEMP 'veylor-installer-smoke.log'
+          if (Test-Path $installRoot) { Remove-Item $installRoot -Recurse -Force }
+          $installProcess = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installRoot`"", "/LOG=`"$installLog`"") -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) { throw "Installer failed: $($installProcess.ExitCode)" }
+          $installed = Join-Path $installRoot 'veylor.exe'
+          if (-not (Test-Path $installed)) { throw 'Installed application EXE missing.' }
+          $expected = (Get-FileHash $compiled -Algorithm SHA256).Hash
+          $actual = (Get-FileHash $installed -Algorithm SHA256).Hash
+          if ($expected -ne $actual) { throw 'Installed EXE hash differs from release build.' }
+          $uninstaller = Join-Path $installRoot 'unins000.exe'
+          if (-not (Test-Path $uninstaller)) { throw 'Uninstaller is missing.' }
+          $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) { throw "Uninstaller failed: $($uninstallProcess.ExitCode)" }
+          if (Test-Path $installed) { throw 'Uninstaller left application EXE installed.' }
+          Write-Host 'Windows beta installer smoke test passed without requiring a publisher certificate.'
+      - name: Record Windows signature status
+        shell: pwsh
+        run: |
+          if ("${{ steps.win-app-sign.outputs.signed }}" -eq "true") { "signed" | Set-Content -Path windows-signing-status.txt }
+          else { "unsigned" | Set-Content -Path windows-signing-status.txt }
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.4-Setup-Windows-x64
-          path: apps/client/dist/Veylor-v0.3.4-Setup-Windows-x64.exe
+          name: Veylor-v0.3.5-Windows-signature-status
+          path: apps/client/windows-signing-status.txt
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.4-Windows-x64
-          path: apps/client/Veylor-v0.3.4-Windows-x64.zip
+          name: Veylor-v0.3.5-Setup-Windows-x64
+          path: apps/client/dist/Veylor-v0.3.5-Setup-Windows-x64.exe
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Veylor-v0.3.5-Windows-x64
+          path: apps/client/Veylor-v0.3.5-Windows-x64.zip
           if-no-files-found: error
           retention-days: 7
   linux:
@@ -85,11 +153,11 @@ jobs:
       - run: flutter pub get
       - run: flutter build linux --release
       - name: Pack Linux bundle
-        run: tar -C build/linux/x64/release/bundle -czf Veylor-v0.3.4-Linux-x64.tar.gz .
+        run: tar -C build/linux/x64/release/bundle -czf Veylor-v0.3.5-Linux-x64.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.4-Linux-x64
-          path: apps/client/Veylor-v0.3.4-Linux-x64.tar.gz
+          name: Veylor-v0.3.5-Linux-x64
+          path: apps/client/Veylor-v0.3.5-Linux-x64.tar.gz
           if-no-files-found: error
           retention-days: 7
   android:
@@ -114,7 +182,100 @@ jobs:
       - run: flutter build apk --debug
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.4-Android-debug
+          name: Veylor-v0.3.5-Android-debug
           path: apps/client/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+      - name: Integration-test Android release APK and AAB with disposable CI-only signing key
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          VEYLOR_KEY_ALIAS: veylor-ci
+          VEYLOR_KEY_PASSWORD: ci-throwaway-password
+          VEYLOR_STORE_PASSWORD: ci-throwaway-password
+          VEYLOR_KEYSTORE_PATH: veylor-release.jks
+        run: |
+          set -euo pipefail
+          trap 'rm -f android/app/veylor-release.jks' EXIT
+          keytool -genkeypair -noprompt -storetype PKCS12 -keystore android/app/veylor-release.jks -alias veylor-ci -keyalg RSA -keysize 2048 -validity 2 -storepass ci-throwaway-password -keypass ci-throwaway-password -dname "CN=CI Test, O=Veylor, C=BR"
+          python3 tool/configure_android_signing.py
+          flutter build apk --release
+          flutter build appbundle --release
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          aab=build/app/outputs/bundle/release/app-release.aab
+          test -s "$apk" && test -s "$aab"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          signer=$(find "$sdk/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          "$signer" verify "$apk"
+          jarsigner -verify "$aab" > /dev/null
+          echo "Disposable CI key verified APK and AAB (test-only; no signed artifact uploaded)."
+      - name: Build permanent-key Android release APK and Play Store AAB, if configured
+        id: android-sign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          VEYLOR_KEY_ALIAS: ${{ secrets.VEYLOR_ANDROID_KEY_ALIAS }}
+          VEYLOR_KEY_PASSWORD: ${{ secrets.VEYLOR_ANDROID_KEY_PASSWORD }}
+          VEYLOR_STORE_PASSWORD: ${{ secrets.VEYLOR_ANDROID_STORE_PASSWORD }}
+          VEYLOR_KEYSTORE_BASE64: ${{ secrets.VEYLOR_ANDROID_KEYSTORE_BASE64 }}
+          VEYLOR_ANDROID_CERT_SHA256: ${{ secrets.VEYLOR_ANDROID_CERT_SHA256 }}
+          VEYLOR_KEYSTORE_PATH: veylor-release.jks
+        run: |
+          set -euo pipefail
+          if [[ -z "$VEYLOR_KEY_ALIAS" && -z "$VEYLOR_KEY_PASSWORD" && -z "$VEYLOR_STORE_PASSWORD" && -z "$VEYLOR_KEYSTORE_BASE64" && -z "$VEYLOR_ANDROID_CERT_SHA256" ]]; then
+            echo "::warning::No Android release credentials configured; publishing debug APK only."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for name in VEYLOR_KEY_ALIAS VEYLOR_KEY_PASSWORD VEYLOR_STORE_PASSWORD VEYLOR_KEYSTORE_BASE64 VEYLOR_ANDROID_CERT_SHA256; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Incomplete Android signing setup (missing $name)."
+              exit 1
+            fi
+          done
+          trap 'rm -f android/app/veylor-release.jks' EXIT
+          python3 - <<'PY'
+          import os, pathlib, base64
+          raw=base64.b64decode(os.environ['VEYLOR_KEYSTORE_BASE64'],validate=True)
+          if len(raw)<200: raise SystemExit('Invalid Android signing keystore')
+          path=pathlib.Path('android/app/veylor-release.jks')
+          path.write_bytes(raw)
+          path.chmod(0o600)
+          PY
+          python3 tool/configure_android_signing.py
+          flutter build apk --release
+          flutter build appbundle --release
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          aab=build/app/outputs/bundle/release/app-release.aab
+          test -s "$apk" && test -s "$aab"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          signer=$(find "$sdk/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          if [[ -z "$signer" ]]; then echo "::error::Missing Android apksigner"; exit 1; fi
+          actual=$("$signer" verify --print-certs "$apk" | sed -nE 's/^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]')
+          expected=$(printf '%s' "$VEYLOR_ANDROID_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+          if [[ ! "$expected" =~ ^[0-9a-f]{64}$ || "$actual" != "$expected" ]]; then
+            echo "::error::APK signer fingerprint mismatch. Refusing release."
+            exit 1
+          fi
+          jarsigner -verify "$aab" >/dev/null
+          aab_cert=$(keytool -printcert -jarfile "$aab" | sed -nE 's/^[[:space:]]*SHA256:[[:space:]]*([0-9a-fA-F:]+).*$/\1/p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          if [[ "$aab_cert" != "$expected" ]]; then
+            echo "::error::AAB upload signature does not match the expected certificate."
+            exit 1
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "Verified Android APK + AAB signed with the permanent publisher upload key."
+      - uses: actions/upload-artifact@v4
+        if: steps.android-sign.outputs.signed == 'true'
+        with:
+          name: Veylor-v0.3.5-Android-release-APK
+          path: apps/client/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: steps.android-sign.outputs.signed == 'true'
+        with:
+          name: Veylor-v0.3.5-Android-Play-AAB
+          path: apps/client/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
