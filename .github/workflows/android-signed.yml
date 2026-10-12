@@ -17,6 +17,7 @@ jobs:
       VEYLOR_STORE_PASSWORD: ${{ secrets.VEYLOR_ANDROID_STORE_PASSWORD }}
       VEYLOR_KEYSTORE_BASE64: ${{ secrets.VEYLOR_ANDROID_KEYSTORE_BASE64 }}
       VEYLOR_KEYSTORE_PATH: veylor-release.jks
+      VEYLOR_ANDROID_CERT_SHA256: ${{ secrets.VEYLOR_ANDROID_CERT_SHA256 }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -32,7 +33,7 @@ jobs:
       - name: Require GitHub Actions signing secrets
         shell: bash
         run: |
-          for name in VEYLOR_KEY_ALIAS VEYLOR_KEY_PASSWORD VEYLOR_STORE_PASSWORD VEYLOR_KEYSTORE_BASE64; do
+          for name in VEYLOR_KEY_ALIAS VEYLOR_KEY_PASSWORD VEYLOR_STORE_PASSWORD VEYLOR_KEYSTORE_BASE64 VEYLOR_ANDROID_CERT_SHA256; do
             if [[ -z "${!name}" ]]; then
               echo "::error::Missing signing secret: ${name}"
               exit 1
@@ -65,10 +66,39 @@ jobs:
           if [[ -z "$signer" ]]; then echo "::error::Android apksigner missing"; exit 1; fi
           "$signer" verify "$file"
           echo "Signed release APK verified"
+      - name: Build Play Store upload bundle and validate permanent certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build appbundle --release
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          aab=build/app/outputs/bundle/release/app-release.aab
+          test -s "$apk" && test -s "$aab"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          signer=$(find "$sdk/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          test -x "$signer" || exit 1
+          actual=$("$signer" verify --print-certs "$apk" | sed -nE 's/^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]')
+          expected=$(printf '%s' "$VEYLOR_ANDROID_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+          if [[ ! "$expected" =~ ^[0-9a-f]{64}$ || "$actual" != "$expected" ]]; then
+            echo "::error::Unexpected Android certificate fingerprint"
+            exit 1
+          fi
+          jarsigner -verify "$aab" > /dev/null
+          aab_sha=$(keytool -printcert -jarfile "$aab" | sed -nE 's/^[[:space:]]*SHA256:[[:space:]]*([0-9a-fA-F:]+).*$/\1/p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          if [[ "$aab_sha" != "$expected" ]]; then
+            echo "::error::Play bundle signing identity differs from permanent upload key"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: Veylor-v0.3.5-Android-signed
           path: apps/client/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Veylor-v0.3.5-Android-Play-AAB
+          path: apps/client/build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 14
       - name: Remove private key from runner directory
