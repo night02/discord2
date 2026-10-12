@@ -43,7 +43,7 @@ bool _validUpdatePayload(Map<String,dynamic> json, String platform, Uri? uri) {
       RegExp(r'^[0-9]+\.[0-9]+\.[0-9]+$').hasMatch(version) &&
       build is int && build > 0 &&
       notes is String && notes.length <= 1500 &&
-      isTrustedVeylorDownload(uri,releaseVersion:version is String?version:null);
+      isTrustedVeylorDownload(uri,releaseVersion:version);
 }
 
 class AndroidUpdate extends AppUpdateInfo {
