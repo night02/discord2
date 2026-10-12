@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:io';
-import '../lib/windows_update_download.dart';
+import 'package:veylor/windows_update_download.dart';
 
 /// Runs as a separate, locally compiled Windows EXE after Veylor exits.
 /// Never reads network URLs and never executes a package with a mismatched hash.
