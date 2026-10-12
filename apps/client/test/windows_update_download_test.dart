@@ -50,7 +50,7 @@ void main() {
     expect(() => parseVeylorWindowsRelease(missing, update()), throwsFormatException);
     final duplicate = release('0.3.6');
     final assets = duplicate['assets'] as List;
-    assets.add(Map.of(assets.first as Map));
+    assets.add(Map<String, dynamic>.from(assets.first as Map));
     expect(() => parseVeylorWindowsRelease(duplicate, update()), throwsFormatException);
     final forged = release('0.3.6');
     (forged['assets'] as List).first['browser_download_url'] =
