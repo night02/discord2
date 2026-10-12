@@ -8,6 +8,19 @@ import {
 import {pool,ensureSchema} from './pg-db.mjs';
 import {attachRealtime,disconnectToken,notifyServer,notifyChannel} from './pg-realtime.mjs';
 import {extraRoutes} from './pg-routes.mjs';
+import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
+import {pgDiscordAdapter} from './discord-pg.mjs';
+
+const discordAuth=createDiscordOAuth(pgDiscordAdapter());
+function oauthCallbackPage(res,ok){
+  res.writeHead(ok?200:400,{
+    'content-type':'text/html; charset=utf-8','cache-control':'no-store',
+    'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'",
+    'referrer-policy':'no-referrer','x-content-type-options':'nosniff',
+    'x-frame-options':'DENY'
+  });
+  res.end(safeOAuthHtml(ok?'ok':'error'));
+}
 
 const release=JSON.parse(readFileSync(new URL('./mobile-release.json',import.meta.url),'utf8'));
 const windowsRelease=JSON.parse(readFileSync(new URL('./windows-release.json',import.meta.url),'utf8'));
@@ -20,6 +33,19 @@ export const app=http.createServer(async(req,res)=>{
     }
     if(m==='GET'&&route==='/api/updates/android')return json(res,200,release);
     if(m==='GET'&&route==='/api/updates/windows')return json(res,200,windowsRelease);
+    if(m==='POST'&&route==='/api/auth/discord/start'){
+      limit(req,'discord-start',12);
+      return json(res,200,await discordAuth.start());
+    }
+    if(m==='POST'&&route==='/api/auth/discord/poll'){
+      limit(req,'discord-poll',40);
+      return json(res,200,await discordAuth.poll(await body(req)));
+    }
+    if(m==='GET'&&route==='/api/auth/discord/callback'){
+      let approved=false;
+      try{await discordAuth.callback(url);approved=true;}catch(_){}
+      return oauthCallbackPage(res,approved);
+    }
     if(m==='POST'&&route==='/api/register'){
       limit(req,'auth',10);
       const {username,password}=await body(req);
