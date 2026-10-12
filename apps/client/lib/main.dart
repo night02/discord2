@@ -10,6 +10,7 @@ import 'update_service.dart';
 import 'windows_update_download.dart';
 import 'update_health.dart';
 import 'update_diagnostics.dart';
+import 'voice_room.dart';
 import 'api_endpoint.dart';
 
 List<String> _startupArguments = const [];
@@ -612,14 +613,29 @@ class _HomeState extends State<Home> {
     });
   }
   Future<void> voice(Map<String,dynamic> c) async {
-    await perform(() async {
-      await api.request('POST','/api/media/token',{'channel_id':c['id']});
+    if(busy || api.token==null)return;
+    setState(() {busy=true;error=null;});
+    try {
+      final response=await api.request('POST','/api/media/token',{'channel_id':c['id']});
+      final access=MediaAccess.fromJson(response);
       if(!mounted)return;
-      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
-        title:const Text('Mídia ainda não ativada'),
-        content:const Text('O backend autorizou o canal. O cliente de voz e vídeo LiveKit será integrado na próxima versão.'),
-        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Entendi'))]));
-    });
+      // Keep media navigation separate from chat state; never keep the global
+      // busy flag set while a voice call is open.
+      setState(()=>busy=false);
+      _closeMobileNavigation();
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder:(_)=>VeylorVoiceRoom(
+          channelName:c['name']?.toString()??'Voz',
+          access:access,
+        )));
+    }catch(e) {
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:Text(e.toString().contains('LiveKit ainda não configurado')
+          ?'O servidor de voz ainda precisa ser configurado pelo administrador.'
+          :'Não foi possível entrar no canal de voz: $e')));
+    }finally {
+      if(mounted)setState(()=>busy=false);
+    }
   }
 
   void _scrollToLatest() {
