@@ -218,6 +218,8 @@ jobs:
       - run: flutter create --project-name veylor --platforms=android .
       - name: Apply Veylor launcher icon on Android
         run: python3 tool/prepare_brand_android.py
+      - name: Grant only foreground Android voice permissions
+        run: python3 tool/prepare_voice_android.py
       - run: flutter pub get
       - run: flutter build apk --debug
       - uses: actions/upload-artifact@v4
