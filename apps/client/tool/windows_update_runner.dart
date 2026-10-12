@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import '../lib/windows_update_download.dart';
 
