@@ -8,6 +8,8 @@ void main() {
     expect(find.byType(MaterialApp), findsOneWidget);
     expect(find.byType(Scaffold), findsOneWidget);
     expect(find.text('Bem-vindo ao Veylor'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.textContaining('V0.3.4'), findsNothing);
     expect(find.textContaining('Servidor:'), findsOneWidget);
     expect(find.byType(TextField), findsNWidgets(2));
   });
