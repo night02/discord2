@@ -10,6 +10,7 @@ import {attachRealtime,disconnectToken,notifyServer,notifyChannel} from './pg-re
 import {extraRoutes} from './pg-routes.mjs';
 import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
 import {pgDiscordAdapter} from './discord-pg.mjs';
+import {integrationStatus,liveKitReady} from './integration-readiness.mjs';
 
 const discordAuth=createDiscordOAuth(pgDiscordAdapter());
 function oauthCallbackPage(res,ok){
@@ -77,6 +78,7 @@ export const app=http.createServer(async(req,res)=>{
 
     const user=await sessionUser(req);
     if(await extraRoutes(req,res,user,route,m,url))return;
+    if(m==='GET'&&route==='/api/integrations/status')return json(res,200,integrationStatus());
     if(m==='GET'&&route==='/api/me')return json(res,200,{user});
     if(m==='POST'&&route==='/api/logout'){
       const t=req.headers.authorization.slice(7);
@@ -155,9 +157,8 @@ export const app=http.createServer(async(req,res)=>{
       if(typeof channel_id!=='string')throw fail(400,'Canal inválido');
       const channel=await channelFor(user.id,channel_id);
       if(channel.type!=='voice')throw fail(400,'Entre em um canal de voz');
-      const {LIVEKIT_URL,LIVEKIT_API_KEY,LIVEKIT_API_SECRET}=process.env;
-      if(!LIVEKIT_URL||!LIVEKIT_API_KEY||!LIVEKIT_API_SECRET||!LIVEKIT_URL.startsWith('wss://'))
-        throw fail(503,'LiveKit ainda não configurado no servidor');
+      const {LIVEKIT_URL}=process.env;
+      if(!liveKitReady())throw fail(503,'LiveKit ainda não configurado no servidor');
       return json(res,200,{url:LIVEKIT_URL,token:mediaToken(user,'veylor-'+channel.id)});
     }
     throw fail(404,'Rota não encontrada');
