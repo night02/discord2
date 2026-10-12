@@ -157,3 +157,73 @@ jobs:
           path: apps/client/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 7
+      - name: Build permanent-key Android release APK and Play Store AAB, if configured
+        id: android-sign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          VEYLOR_KEY_ALIAS: ${{ secrets.VEYLOR_ANDROID_KEY_ALIAS }}
+          VEYLOR_KEY_PASSWORD: ${{ secrets.VEYLOR_ANDROID_KEY_PASSWORD }}
+          VEYLOR_STORE_PASSWORD: ${{ secrets.VEYLOR_ANDROID_STORE_PASSWORD }}
+          VEYLOR_KEYSTORE_BASE64: ${{ secrets.VEYLOR_ANDROID_KEYSTORE_BASE64 }}
+          VEYLOR_ANDROID_CERT_SHA256: ${{ secrets.VEYLOR_ANDROID_CERT_SHA256 }}
+          VEYLOR_KEYSTORE_PATH: veylor-release.jks
+        run: |
+          set -euo pipefail
+          if [[ -z "$VEYLOR_KEY_ALIAS" && -z "$VEYLOR_KEY_PASSWORD" && -z "$VEYLOR_STORE_PASSWORD" && -z "$VEYLOR_KEYSTORE_BASE64" && -z "$VEYLOR_ANDROID_CERT_SHA256" ]]; then
+            echo "::warning::No Android release credentials configured; publishing debug APK only."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          for name in VEYLOR_KEY_ALIAS VEYLOR_KEY_PASSWORD VEYLOR_STORE_PASSWORD VEYLOR_KEYSTORE_BASE64 VEYLOR_ANDROID_CERT_SHA256; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Incomplete Android signing setup (missing $name)."
+              exit 1
+            fi
+          done
+          trap 'rm -f android/app/veylor-release.jks' EXIT
+          python3 - <<'PY'
+          import os, pathlib, base64
+          raw=base64.b64decode(os.environ['VEYLOR_KEYSTORE_BASE64'],validate=True)
+          if len(raw)<200: raise SystemExit('Invalid Android signing keystore')
+          path=pathlib.Path('android/app/veylor-release.jks')
+          path.write_bytes(raw)
+          path.chmod(0o600)
+          PY
+          python3 tool/configure_android_signing.py
+          flutter build apk --release
+          flutter build appbundle --release
+          apk=build/app/outputs/flutter-apk/app-release.apk
+          aab=build/app/outputs/bundle/release/app-release.aab
+          test -s "$apk" && test -s "$aab"
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          signer=$(find "$sdk/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          if [[ -z "$signer" ]]; then echo "::error::Missing Android apksigner"; exit 1; fi
+          actual=$("$signer" verify --print-certs "$apk" | sed -nE 's/^Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})$/\1/p' | head -n 1 | tr '[:upper:]' '[:lower:]')
+          expected=$(printf '%s' "$VEYLOR_ANDROID_CERT_SHA256" | tr -d ': ' | tr '[:upper:]' '[:lower:]')
+          if [[ ! "$expected" =~ ^[0-9a-f]{64}$ || "$actual" != "$expected" ]]; then
+            echo "::error::APK signer fingerprint mismatch. Refusing release."
+            exit 1
+          fi
+          jarsigner -verify "$aab" >/dev/null
+          aab_cert=$(keytool -printcert -jarfile "$aab" | sed -nE 's/^[[:space:]]*SHA256:[[:space:]]*([0-9a-fA-F:]+).*$/\1/p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')
+          if [[ "$aab_cert" != "$expected" ]]; then
+            echo "::error::AAB upload signature does not match the expected certificate."
+            exit 1
+          fi
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+          echo "Verified Android APK + AAB signed with the permanent publisher upload key."
+      - uses: actions/upload-artifact@v4
+        if: steps.android-sign.outputs.signed == 'true'
+        with:
+          name: Veylor-v0.3.5-Android-release-APK
+          path: apps/client/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: steps.android-sign.outputs.signed == 'true'
+        with:
+          name: Veylor-v0.3.5-Android-Play-AAB
+          path: apps/client/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
