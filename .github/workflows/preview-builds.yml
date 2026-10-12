@@ -1,7 +1,11 @@
-name: Veylor V0.3.4 preview builds
+name: Veylor preview builds
 on:
   push:
     branches: [main]
+    paths:
+      - "apps/client/**"
+      - ".github/workflows/preview-builds.yml"
+      - ".github/workflows/publish-beta.yml"
   pull_request:
     paths:
       - "apps/client/**"
