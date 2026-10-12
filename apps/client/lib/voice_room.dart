@@ -44,7 +44,7 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
   final lk.Room room = lk.Room(roomOptions:const lk.RoomOptions(
     adaptiveStream:true,dynacast:true,
   ));
-  bool connecting=true, connected=false, microphone=false, sharing=false;
+  bool connecting=true, connected=false, microphone=false, camera=false, sharing=false;
   bool working=false;
   String? failure;
 
@@ -91,6 +91,18 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
     if(participant==null)throw StateError('Local participant not ready');
     await participant.setMicrophoneEnabled(!microphone);
     if(mounted)setState(()=>microphone=!microphone);
+  });
+
+  Future<void> _toggleCamera()=>_action(() async {
+    final participant=room.localParticipant;
+    if(participant==null)throw StateError('Participante indisponível');
+    // No camera permission or publishing until the user clicks this button.
+    await participant.setCameraEnabled(!camera,
+      cameraCaptureOptions:const lk.CameraCaptureOptions(
+        params:lk.VideoParametersPresets.h720_169,
+        maxFrameRate:24.0,
+      ));
+    if(mounted)setState(()=>camera=!camera);
   });
 
   Future<void> _toggleShare()=>_action(() async {
@@ -153,9 +165,12 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
 
   Widget _participantCard(lk.Participant participant,{bool self=false}) {
     lk.VideoTrack? visible;
-    for(final publication in participant.videoTrackPublications) {
-      if(publication.isScreenShare && publication.subscribed && !publication.muted &&
-          publication.track is lk.VideoTrack) {
+    // Prefer screen share, then show the participant's camera.
+    final tracks=participant.videoTrackPublications.toList();
+    tracks.sort((a,b)=>(b.isScreenShare?1:0).compareTo(a.isScreenShare?1:0));
+    for(final publication in tracks) {
+      if(!publication.muted && publication.track is lk.VideoTrack &&
+          (self || publication.subscribed)) {
         visible=publication.track as lk.VideoTrack;
         break;
       }
@@ -175,7 +190,7 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
         const SizedBox(height:10),
         Text(self?'Você':participant.name.isNotEmpty?participant.name:'Participante',
             maxLines:1,overflow:TextOverflow.ellipsis),
-        if(self)const Padding(padding:EdgeInsets.only(top:4),
+        if(self && !camera)const Padding(padding:EdgeInsets.only(top:4),
           child:Text('Sua câmera está desligada',style:TextStyle(fontSize:11,color:Colors.white60))),
       ])));
   }
@@ -227,6 +242,10 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
               onPressed:connected&&!working?_toggleMic:null,
               icon:Icon(microphone?Icons.mic:Icons.mic_off),
               label:Text(microphone?'Silenciar':'Ativar microfone')),
+            FilledButton.tonalIcon(
+              onPressed:connected&&!working?_toggleCamera:null,
+              icon:Icon(camera?Icons.videocam:Icons.videocam_off),
+              label:Text(camera?'Desligar câmera':'Ligar câmera')),
             if(Platform.isWindows||Platform.isMacOS)
               FilledButton.tonalIcon(
                 onPressed:connected&&!working?_toggleShare:null,
