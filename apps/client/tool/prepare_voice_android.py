@@ -12,6 +12,7 @@ header = "<manifest"
 permissions = (
     "android.permission.INTERNET",
     "android.permission.RECORD_AUDIO",
+    "android.permission.CAMERA",
     "android.permission.MODIFY_AUDIO_SETTINGS",
 )
 insertion = []
@@ -24,4 +25,4 @@ if insertion:
         raise SystemExit("Android manifest has no application node")
     src = src.replace("<application", "\n".join(insertion) + "\n    <application", 1)
     manifest.write_text(src, encoding="utf-8")
-print("Android foreground microphone permissions verified (no background capture).")
+print("Android foreground camera/microphone permissions verified (no background capture).")
