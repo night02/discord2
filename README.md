@@ -2,7 +2,7 @@
 
 Veylor é um aplicativo **beta** de comunicação por texto para Windows, Android e Linux, com cliente Flutter e backend Node.js/PostgreSQL. O objetivo é oferecer servidores, canais de texto e conversas privadas com sincronização em tempo real.
 
-> **Estado atual:** V0.3.4 disponível como beta; V0.3.5 em testes no PR #3. Não trate builds de depuração como versão estável.
+> **Estado atual:** V0.3.4 beta, V0.3.5 em testes no PR #3 e V0.3.6 em branch dependente de testes. Nenhuma das duas versões novas é estável.
 
 ## Recursos atuais
 
@@ -11,7 +11,8 @@ Veylor é um aplicativo **beta** de comunicação por texto para Windows, Androi
 - WebSocket para avisos de atualização, reconexão progressiva e recuperação de mensagens via REST.
 - Reenvio de mensagens com identificador de idempotência (evita duplicatas em timeout).
 - Armazenamento de sessão local em Secure Storage do Flutter.
-- Verificador de novas versões no Windows e Android: abre a página oficial do GitHub, sem executar downloads automaticamente.
+- Atualizações Android: abre a página oficial do GitHub, sem instalar APKs automaticamente.
+- Atualizações Windows (V0.3.6+): baixa uma Release oficial no app, verifica SHA-256 do instalador, solicita confirmação e usa helper externo com backup e rollback em caso de falha no setup. O primeiro upgrade a partir da V0.3.5 ainda é manual.
 - Servidor compatível com PostgreSQL ou SQLite local para desenvolvimento.
 
 **Ainda não oferece chamadas de voz, vídeo, compartilhamento de tela nem atualização silenciosa.** Canais de voz podem existir na interface, mas a conexão de mídia não está concluída.
@@ -67,6 +68,7 @@ Para o Android e outros computadores use uma URL HTTPS do backend acessível pel
 - [Estratégia de releases V0.3.4](docs/V0.3.4_RELEASES.md)
 - [Estabilidade V0.3.3](docs/V0.3.3_STABILITY.md)
 - [Instaladores e assinatura Android](docs/INSTALLERS.md)
+- [Atualizador Windows e recuperação V0.3.6](docs/V0.3.6_UPDATER.md)
 - [PostgreSQL no Render](docs/RENDER_STAGING.md)
 
 **Importante:** o banco PostgreSQL gratuito do ambiente de homologação foi criado com vencimento previsto para **11/11/2026**. Faça migração/backup para armazenamento durável antes de manter usuários reais nessa base.
