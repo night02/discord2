@@ -125,6 +125,7 @@ jobs:
           Copy-Item (Join-Path $installRoot 'veylor-updater.exe') $updater -Force
           $digest = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           $wrongDigest = '0' * 64
+          $PSNativeCommandUseErrorActionPreference = $false # expected nonzero exit codes test rollback
           & $updater '--installer' $setup '--sha256' $wrongDigest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.6' '--no-relaunch' 'true'
           if ($LASTEXITCODE -ne 93) { throw 'Bad SHA-256 was not rejected.' }
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Digest rejection modified installed app.' }
