@@ -2,11 +2,13 @@
 
 Veylor é um aplicativo **beta** de comunicação por texto para Windows, Android e Linux, com cliente Flutter e backend Node.js/PostgreSQL. O objetivo é oferecer servidores, canais de texto e conversas privadas com sincronização em tempo real.
 
-> **Estado atual:** V0.3.6 beta publicada; V0.3.7 em validação. Builds de testes não são releases estáveis.
+> **Estado atual:** V0.3.7 beta publicada; V0.3.8 em testes com nova identidade visual e interface desktop. Builds de testes não são releases estáveis.
 
 ## Recursos atuais
 
 - Cadastro, login, servidores, convites, cargos básicos e canais.
+- Navegação desktop inspirada em mensageiros modernos: servidores, DMs, canais, chat, painel de membros responsivo e filtro local de mensagens.
+- Identidade Veylor azul/ciano no Windows (app e instalador), Android e tela Flutter.
 - Mensagens em canais e conversas privadas, com autorização pelo backend.
 - WebSocket para avisos de atualização, reconexão progressiva e recuperação de mensagens via REST.
 - Reenvio de mensagens com identificador de idempotência (evita duplicatas em timeout).
@@ -71,6 +73,7 @@ Para o Android e outros computadores use uma URL HTTPS do backend acessível pel
 - [Instaladores e assinatura Android](docs/INSTALLERS.md)
 - [Atualizador Windows e recuperação V0.3.6](docs/V0.3.6_UPDATER.md)
 - [Watchdog e rollback V0.3.7](docs/V0.3.7_UPDATER.md)
+- [Interface e identidade visual V0.3.8](docs/V0.3.8_INTERFACE.md)
 - [PostgreSQL no Render](docs/RENDER_STAGING.md)
 
 **Importante:** o banco PostgreSQL gratuito do ambiente de homologação foi criado com vencimento previsto para **11/11/2026**. Faça migração/backup para armazenamento durável antes de manter usuários reais nessa base.
