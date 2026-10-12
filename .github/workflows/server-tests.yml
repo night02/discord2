@@ -44,3 +44,4 @@ jobs:
       - run: node --check apps/server/scripts/import-sqlite.mjs
       - run: node --test apps/server/test/import.test.mjs
       - run: node --test apps/server/test/postgres.test.mjs
+      - run: node --test apps/server/test/discord-pg.test.mjs
