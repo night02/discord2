@@ -27,7 +27,7 @@ jobs:
           grep -q 'AppVersion "0.3.4"' apps/client/windows-installer.iss
           grep -q 'Veylor-v0.3.4-Setup-Windows-x64' .github/workflows/preview-builds.yml
   publish:
-    name: Publish private GitHub prerelease (manual only)
+    name: Publish GitHub beta prerelease (manual only)
     if: github.event_name == 'workflow_dispatch'
     needs: lint-release
     runs-on: ubuntu-latest
@@ -48,8 +48,8 @@ jobs:
             echo "::error::Build run must be an integer"
             exit 1
           fi
-          if [[ "$GITHUB_REF_NAME" != "feature/veylor-v0.3.4-stability" ]]; then
-            echo "::error::Run this beta release only on the validated Veylor installer branch"
+          if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+            echo "::error::Publish only from the validated main branch after checks have passed"
             exit 1
           fi
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -60,7 +60,7 @@ jobs:
           branch=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json headBranch --jq '.headBranch')
           workflow=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json workflowName --jq '.workflowName')
           build_sha=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json headSha --jq '.headSha')
-          if [[ "$conclusion" != "success" || "$branch" != "$GITHUB_REF_NAME" ||
+          if [[ "$conclusion" != "success" || "$branch" != "main" ||
                 "$workflow" != "Veylor V0.3.4 preview builds" || "$build_sha" != "$GITHUB_SHA" ]]; then
             echo "::error::Requires a successful matching V0.3.4 preview workflow from this branch"
             exit 1
@@ -105,7 +105,7 @@ jobs:
           - Android: **DEBUG TEST APK ONLY**, NOT a signed release.
           - SHA256SUMS.txt provides integrity hashes for every asset.
           - PostgreSQL data are not migrated or modified by this release.
-          - This is a private repository; access requires GitHub authorization.
+          - Repository downloads follow GitHub visibility settings; verify public access before distributing links.
           - The Windows installer is not digitally signed yet.
           EOF
           gh release create "$RELEASE_TAG" release-out/* \
