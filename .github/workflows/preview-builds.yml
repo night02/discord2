@@ -1,5 +1,7 @@
 name: Veylor V0.3.4 preview builds
 on:
+  push:
+    branches: [main]
   pull_request:
     paths:
       - "apps/client/**"
