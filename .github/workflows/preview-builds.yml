@@ -108,8 +108,8 @@ jobs:
           $installRoot = Join-Path $env:RUNNER_TEMP 'Veylor-Installer-Smoke'
           $installLog = Join-Path $env:RUNNER_TEMP 'veylor-installer-smoke.log'
           if (Test-Path $installRoot) { Remove-Item $installRoot -Recurse -Force }
-          & $setup '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART' "/DIR=$installRoot" "/LOG=$installLog"
-          if ($LASTEXITCODE -ne 0) { throw "Installer failed: $LASTEXITCODE" }
+          $installProcess = Start-Process -FilePath $setup -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=`"$installRoot`"", "/LOG=`"$installLog`"") -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) { throw "Installer failed: $($installProcess.ExitCode)" }
           $installed = Join-Path $installRoot 'veylor.exe'
           if (-not (Test-Path $installed)) { throw 'Installed application EXE missing.' }
           if (-not (Test-Path (Join-Path $installRoot 'veylor-updater.exe'))) { throw 'Rollback helper missing.' }
@@ -137,8 +137,8 @@ jobs:
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Updated executable hash mismatch.' }
           $uninstaller = Join-Path $installRoot 'unins000.exe'
           if (-not (Test-Path $uninstaller)) { throw 'Uninstaller is missing.' }
-          & $uninstaller '/VERYSILENT' '/SUPPRESSMSGBOXES' '/NORESTART'
-          if ($LASTEXITCODE -ne 0) { throw "Uninstaller failed: $LASTEXITCODE" }
+          $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') -Wait -PassThru
+          if ($uninstallProcess.ExitCode -ne 0) { throw "Uninstaller failed: $($uninstallProcess.ExitCode)" }
           if (Test-Path $installed) { throw 'Uninstaller left application EXE installed.' }
           Write-Host 'Windows beta installer smoke test passed without requiring a publisher certificate.'
       - name: Record Windows signature status
