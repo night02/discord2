@@ -34,6 +34,25 @@ jobs:
       - run: flutter create --project-name veylor --platforms=windows .
       - run: flutter pub get
       - run: flutter build windows --release
+      - name: Authenticode sign Windows app if publisher credentials exist
+        id: win-app-sign
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          VEYLOR_WINDOWS_PFX_BASE64: ${{ secrets.VEYLOR_WINDOWS_PFX_BASE64 }}
+          VEYLOR_WINDOWS_PFX_PASSWORD: ${{ secrets.VEYLOR_WINDOWS_PFX_PASSWORD }}
+        run: |
+          if (-not $env:VEYLOR_WINDOWS_PFX_BASE64 -and -not $env:VEYLOR_WINDOWS_PFX_PASSWORD) {
+            "signed=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            Write-Warning "Windows signing credentials not configured: output is UNSIGNED beta."
+          } else {
+            if (-not $env:VEYLOR_WINDOWS_PFX_BASE64 -or -not $env:VEYLOR_WINDOWS_PFX_PASSWORD) {
+              throw "Partial Windows signing credentials. Both certificate and password are required."
+            }
+            & "$env:GITHUB_WORKSPACE/tools/sign-windows.ps1" -FilePath "build/windows/x64/runner/Release/veylor.exe"
+            if ($LASTEXITCODE -ne 0) { throw "Windows app signing failed" }
+            "signed=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
       - name: Pack portable Windows bundle
         shell: pwsh
         run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Veylor-v0.3.5-Windows-x64.zip -Force
@@ -53,6 +72,26 @@ jobs:
           & $compiler "windows-installer.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed ($LASTEXITCODE)" }
           if (-not (Test-Path "dist/Veylor-v0.3.5-Setup-Windows-x64.exe")) { throw "Installer not generated" }
+      - name: Authenticode sign Windows installer if app is signed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.win-app-sign.outputs.signed == 'true'
+        shell: pwsh
+        env:
+          VEYLOR_WINDOWS_PFX_BASE64: ${{ secrets.VEYLOR_WINDOWS_PFX_BASE64 }}
+          VEYLOR_WINDOWS_PFX_PASSWORD: ${{ secrets.VEYLOR_WINDOWS_PFX_PASSWORD }}
+        run: |
+          & "$env:GITHUB_WORKSPACE/tools/sign-windows.ps1" -FilePath "dist/Veylor-v0.3.5-Setup-Windows-x64.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Windows installer signing failed" }
+      - name: Record Windows signature status
+        shell: pwsh
+        run: |
+          if ("${{ steps.win-app-sign.outputs.signed }}" -eq "true") { "signed" | Set-Content -Path windows-signing-status.txt }
+          else { "unsigned" | Set-Content -Path windows-signing-status.txt }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Veylor-v0.3.5-Windows-signature-status
+          path: apps/client/windows-signing-status.txt
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: Veylor-v0.3.5-Setup-Windows-x64
