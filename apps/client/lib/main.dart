@@ -11,6 +11,7 @@ import 'windows_update_download.dart';
 import 'update_health.dart';
 import 'update_diagnostics.dart';
 import 'voice_room.dart';
+import 'discord_login.dart';
 import 'api_endpoint.dart';
 
 List<String> _startupArguments = const [];
@@ -493,6 +494,608 @@ class _HomeState extends State<Home> {
     try {await task();} catch(e) {if(mounted)setState(()=>error=e.toString().replaceFirst('Exception: ',''));}
     finally {if(mounted)setState(()=>busy=false);}
   }
+  Future<void> loginWithDiscord() async {
+    if(busy)return;
+    setState(() {busy=true;error=null;});
+    bool cancelled=false;
+    bool progressVisible=false;
+    try {
+      final start=await api.request('POST','/api/auth/discord/start');
+      final authorization=DiscordLoginRequest.fromJson(start);
+      final opened=await launchUrl(authorization.url,mode:LaunchMode.externalApplication);
+      if(!opened)throw StateError('Não foi possível abrir o navegador para autenticar.');
+      if(!mounted)return;
+      progressVisible=true;
+      final modal=showDialog<void>(
+        context:context,barrierDismissible:false,
+        builder:(ctx)=>AlertDialog(
+          title:const Text('Entrar com Discord'),
+          content:const Column(mainAxisSize:MainAxisSize.min,children:[
+            CircularProgressIndicator(),
+            SizedBox(height:20),
+            Text('Autorize a Veylor no navegador. Esta janela aguardará a confirmação.'),
+          ]),
+          actions:[TextButton(onPressed:(){
+            cancelled=true;
+            Navigator.of(ctx).pop();
+          },child:const Text('Cancelar'))],
+        ));
+      for(var attempt=0;attempt<100&&!cancelled&&mounted;attempt++){
+        await Future<void>.delayed(const Duration(seconds:2));
+        if(cancelled||!mounted)break;
+        final result=await api.request('POST','/api/auth/discord/poll',{
+          'request_id':authorization.requestId,
+          'poll_secret':authorization.pollSecret,
+        });
+        if(result['status']!='ready')continue;
+        final token=result['token'],profile=result['user'];
+        if(token is! String||!RegExp(r'^[a-f0-9]{64}
+    api.baseUrl=validateApiEndpoint(api.baseUrl);
+    final data=await api.request('POST',signup?'/api/register':'/api/login',
+      {'username':user.text.trim(),'password':password.text});
+    api.token=data['token'] as String;
+    nick=(data['user'] as Map<String,dynamic>)['username'] as String;
+    password.clear();
+    await storage.write(key:'veylor_session',value:api.token);
+    await loadServers();await loadDms();startRealtime();
+  });
+  Future<void> loadServers() async {
+    final r=await api.request('GET','/api/servers');
+    servers=List<Map<String,dynamic>>.from(r['servers'] as List);
+    if(!servers.any((s)=>s['id']==serverId))serverId=servers.isEmpty?null:servers.first['id'] as String;
+    await loadChannels();
+  }
+  Future<void> loadChannels() async {
+    final previousChannel=channelId;
+    channels=[];
+    if(serverId!=null){
+      final r=await api.request('GET','/api/servers/'+serverId!+'/channels');
+      channels=List<Map<String,dynamic>>.from(r['channels'] as List);
+    }
+    if(!channels.any((c)=>c['id']==channelId&&c['type']=='text')){
+      channelId=null;
+      for(final c in channels){if(c['type']=='text'){channelId=c['id'] as String;break;}}
+    }
+    // Preserve currently displayed messages when membership/channel metadata changes.
+    if(dmId==null&&(messages.isEmpty||previousChannel!=channelId)) {
+      cursor=0;messages=[];
+      await refresh();
+    }
+    if(mounted)setState((){});
+  }
+  Future<void> refresh() async {
+    if(refreshing){refreshAgain=true;return;}
+    refreshing=true;
+    try{
+      do{
+        refreshAgain=false;
+        final id=dmId??channelId,isDm=dmId!=null;
+        if(id==null||api.token==null)break;
+        try{
+          // Fetch every page, not only the first 100 messages after an outage.
+          for(var pages=0;pages<50;pages++){
+            final route=isDm?'/api/dms/$id/messages':'/api/channels/$id/messages';
+            final result=await api.request('GET','$route?after=$cursor');
+            if(!mounted||api.token==null||id!=(isDm?dmId:channelId))break;
+            final rows=List<Map<String,dynamic>>.from(result['messages'] as List);
+            if(rows.isEmpty)break;
+            setState((){
+              messages=mergeMessagePages(messages,rows);
+              cursor=messages.last['id'] as int;
+            });
+            if(rows.length<100)break;
+          }
+        }catch(e){if(mounted)setState(()=>error=e.toString());}
+      }while(refreshAgain&&mounted);
+    }finally{refreshing=false;}
+  }
+  Future<void> send() async {
+    if(sending)return;
+    final text=message.text.trim();
+    if(text.isEmpty||(dmId==null&&channelId==null))return;
+    final route=dmId!=null?'/api/dms/'+dmId!+'/messages':'/api/channels/'+channelId!+'/messages';
+    final previous=pendingMessage;
+    final pending=previous!=null&&previous.matches(route,text)
+      ?previous:PendingMessage(route:route,content:text,nonce:createClientNonce());
+    pendingMessage=pending;
+    sending=true;
+    try{
+      await perform(() async {
+        await api.request('POST',route,{'content':text,'client_nonce':pending.nonce});
+        // Never delete anything typed while a slow request was in flight.
+        if(message.text.trim()==text)message.clear();
+        if(identical(pendingMessage,pending))pendingMessage=null;
+        await refresh();
+        _scrollToLatest();
+      });
+    }finally{sending=false;}
+  }
+  Future<String?> prompt(String title,String hint) async {
+    final controller=TextEditingController();
+    final result=await showDialog<String>(context:context,builder:(ctx)=>AlertDialog(
+      title:Text(title),content:TextField(controller:controller,autofocus:true,
+        decoration:InputDecoration(hintText:hint)),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Cancelar')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,controller.text.trim()),child:const Text('OK'))]));
+    controller.dispose();return result;
+  }
+  Future<void> createServer() async {
+    final name=await prompt('Criar servidor','Nome');
+    if(name==null||name.isEmpty)return;
+    await perform(() async {
+      final r=await api.request('POST','/api/servers',{'name':name});
+      serverId=(r['server'] as Map<String,dynamic>)['id'] as String;
+      await loadServers();
+    });
+  }
+  Future<void> joinInvite() async {
+    final code=await prompt('Entrar no servidor','Código de convite');
+    if(code==null||code.isEmpty)return;
+    await perform(() async {
+      final r=await api.request('POST','/api/invites/'+Uri.encodeComponent(code)+'/join');
+      serverId=r['server_id'] as String;
+      await loadServers();
+    });
+  }
+  Future<void> invite() async {
+    if(serverId==null)return;
+    await perform(() async {
+      final r=await api.request('POST','/api/servers/'+serverId!+'/invites');
+      if(!mounted)return;
+      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
+        title:const Text('Convite válido por 7 dias'),
+        content:SelectableText(r['code'] as String),
+        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Fechar'))]));
+    });
+  }
+  Future<void> voice(Map<String,dynamic> c) async {
+    if(busy || api.token==null)return;
+    setState(() {busy=true;error=null;});
+    try {
+      final response=await api.request('POST','/api/media/token',{'channel_id':c['id']});
+      final access=MediaAccess.fromJson(response);
+      if(!mounted)return;
+      // Keep media navigation separate from chat state; never keep the global
+      // busy flag set while a voice call is open.
+      setState(()=>busy=false);
+      _closeMobileNavigation();
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder:(_)=>VeylorVoiceRoom(
+          channelName:c['name']?.toString()??'Voz',
+          access:access,
+        )));
+    }catch(e) {
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:Text(e.toString().contains('LiveKit ainda não configurado')
+          ?'O servidor de voz ainda precisa ser configurado pelo administrador.'
+          :'Não foi possível entrar no canal de voz: $e')));
+    }finally {
+      if(mounted)setState(()=>busy=false);
+    }
+  }
+
+  void _scrollToLatest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !messageScroll.hasClients) return;
+      messageScroll.animateTo(messageScroll.position.maxScrollExtent,
+        duration:const Duration(milliseconds:220),curve:Curves.easeOutCubic);
+    });
+  }
+
+  void _closeMobileNavigation() {
+    if (MediaQuery.sizeOf(context).width < 730 && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _selectDm(Map<String,dynamic> conversation) async {
+    await perform(() async {
+      dmId=conversation['id'] as String;
+      cursor=0;messages=[];searchController.clear();
+      await refresh();
+      if(mounted) setState(() {});
+      _closeMobileNavigation();
+      _scrollToLatest();
+    });
+  }
+
+  Future<void> _selectChannel(Map<String,dynamic> channel) async {
+    await perform(() async {
+      dmId=null;channelId=channel['id'] as String;
+      cursor=0;messages=[];searchController.clear();
+      await refresh();
+      if(mounted) setState(() {});
+      _closeMobileNavigation();
+      _scrollToLatest();
+    });
+  }
+
+  Future<void> _toggleMemberPanel() async {
+    if (serverId==null) return;
+    if (MediaQuery.sizeOf(context).width < 1100) {
+      await manageMembers();
+      return;
+    }
+    setState(() => showMembers=!showMembers);
+    if(!showMembers) return;
+    final requestedServer=serverId!;
+    try {
+      final result=await api.request('GET','/api/servers/$requestedServer/members');
+      if(mounted&&serverId==requestedServer) {
+        setState(()=>memberPreview=List<Map<String,dynamic>>.from(result['members'] as List));
+      }
+    } catch(e) {
+      if(mounted) setState(()=>error='Não foi possível carregar membros: $e');
+    }
+  }
+
+  Widget _brand({double size=48})=>ClipRRect(
+    borderRadius:BorderRadius.circular(size*.26),
+    child:Image.asset('assets/veylor_logo.png',width:size,height:size,fit:BoxFit.cover,
+      filterQuality:FilterQuality.medium));
+
+  Widget _serverRail() => Container(width:72,color:sidebar,child:Column(children:[
+    const SizedBox(height:12),
+    Tooltip(message:'Veylor',child:_brand(size:48)),
+    Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:12),
+      child:Container(height:1,color:Colors.white12)),
+    Expanded(child:ListView(padding:EdgeInsets.zero,children:[
+      for(final server in servers)
+        Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),
+          child:Tooltip(message:server['name']?.toString()??'Servidor',
+            child:Material(color:serverId==server['id']?accent:surface,
+              borderRadius:BorderRadius.circular(serverId==server['id']?16:24),
+              clipBehavior:Clip.antiAlias,
+              child:InkWell(
+                key:ValueKey('server-${server['id']}'),
+                onTap:()=>perform(() async {
+                  dmId=null;serverId=server['id'] as String;
+                  memberPreview=[];showMembers=false;
+                  await loadChannels();_closeMobileNavigation();
+                }),
+                child:SizedBox(height:48,child:Center(
+                  child:Text((server['name']?.toString().isNotEmpty??false)
+                     ?server['name'].toString().substring(0,1).toUpperCase():'?',
+                    style:const TextStyle(fontSize:20,fontWeight:FontWeight.w700)))))))),
+      Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),
+        child:Tooltip(message:'Criar servidor',child:IconButton.filledTonal(
+          onPressed:createServer,icon:const Icon(Icons.add,size:25)))),
+      Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),
+        child:Tooltip(message:'Entrar com convite',child:IconButton.filledTonal(
+          onPressed:joinInvite,icon:const Icon(Icons.login_rounded,size:22)))),
+    ])),
+  ]));
+
+  Widget _sectionHeader(String title,VoidCallback? onAdd)=>Padding(
+    padding:const EdgeInsets.fromLTRB(14,16,8,5),
+    child:Row(children:[
+      Expanded(child:Text(title,style:const TextStyle(color:muted,fontSize:11,
+        fontWeight:FontWeight.w700,letterSpacing:.65))),
+      if(onAdd!=null)IconButton(
+        tooltip:'Adicionar $title',visualDensity:VisualDensity.compact,
+        onPressed:onAdd,icon:const Icon(Icons.add,size:18,color:muted)),
+    ]));
+
+  Widget _navEntry({required String title,required IconData icon,
+    required bool selected,required VoidCallback onTap,String? keyId})=>
+    Padding(padding:const EdgeInsets.symmetric(horizontal:8,vertical:2),
+      child:Material(color:selected?highlight:Colors.transparent,
+        borderRadius:BorderRadius.circular(7),
+        child:InkWell(key:keyId==null?null:ValueKey(keyId),
+          onTap:onTap,borderRadius:BorderRadius.circular(7),
+          child:Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:10),
+            child:Row(children:[
+              Icon(icon,size:19,color:selected?Colors.white:muted),
+              const SizedBox(width:12),
+              Expanded(child:Text(title,maxLines:1,overflow:TextOverflow.ellipsis,
+                style:TextStyle(color:selected?Colors.white:muted,
+                  fontWeight:selected?FontWeight.w600:FontWeight.w500,fontSize:14))),
+            ])))));
+
+  Widget _channelRail()=>Expanded(child:Container(color:surface,child:Column(children:[
+    SizedBox(height:62,child:Padding(padding:const EdgeInsets.symmetric(horizontal:14),
+      child:Row(children:[
+        Expanded(child:Text(servers.where((s)=>s['id']==serverId)
+          .map((s)=>s['name']?.toString()??'Veylor').firstOrNull??'Veylor',
+          maxLines:1,overflow:TextOverflow.ellipsis,
+          style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700))),
+        IconButton(onPressed:serverId==null?null:invite,tooltip:'Criar convite',
+          icon:const Icon(Icons.person_add_alt_1_outlined,size:21))
+      ]))),
+    const Divider(height:1,color:Color(0xFF17181D)),
+    Expanded(child:ListView(children:[
+      _sectionHeader('MENSAGENS PRIVADAS',startDm),
+      for(final d in dms)
+        _navEntry(title:d['username']?.toString()??'Conversa',
+          icon:Icons.person_outline_rounded,selected:dmId==d['id'],
+          keyId:'dm-${d['id']}',onTap:()=>_selectDm(d)),
+      _sectionHeader('CANAIS DE TEXTO',canManage?()=>createChannel('text'):null),
+      for(final c in channels.where((c)=>c['type']=='text'))
+        _navEntry(title:c['name']?.toString()??'canal',
+          icon:Icons.tag_rounded,selected:dmId==null&&channelId==c['id'],
+          keyId:'channel-${c['id']}',onTap:()=>_selectChannel(c)),
+      _sectionHeader('CANAIS DE VOZ',canManage?()=>createChannel('voice'):null),
+      for(final c in channels.where((c)=>c['type']=='voice'))
+        _navEntry(title:c['name']?.toString()??'voz',
+          icon:Icons.volume_up_outlined,selected:false,
+          keyId:'voice-${c['id']}',onTap:()=>voice(c)),
+      const SizedBox(height:20),
+    ])),
+    const Divider(height:1,color:Color(0xFF17181D)),
+    _navEntry(title:'Membros do servidor',icon:Icons.group_outlined,
+      selected:showMembers,onTap:_toggleMemberPanel),
+    if(Platform.isAndroid||Platform.isWindows)
+      _navEntry(title:'Verificar atualização',icon:Icons.system_update_alt_rounded,
+        selected:false,onTap:()=>checkForUpdates()),
+    if(Platform.isWindows)
+      _navEntry(title:'Logs de atualização',icon:Icons.folder_open_outlined,
+        selected:false,onTap:() async {
+          try {
+            final folder=UpdateDiagnostics.logDirectory;
+            await folder.create(recursive:true);
+            await Process.start('explorer.exe',[folder.path],
+                mode:ProcessStartMode.detached);
+          } catch (_) {
+            if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content:Text('Não foi possível abrir a pasta de logs.')));
+          }
+        }),
+    Container(color:sidebar,padding:const EdgeInsets.symmetric(horizontal:6,vertical:6),
+      child:Row(children:[
+        CircleAvatar(radius:18,backgroundColor:accent,
+          child:Text((nick??'V').substring(0,1).toUpperCase(),
+            style:const TextStyle(fontWeight:FontWeight.w700,color:Colors.black))),
+        const SizedBox(width:9),
+        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          Text(nick??'Conta',maxLines:1,overflow:TextOverflow.ellipsis,
+            style:const TextStyle(fontWeight:FontWeight.w700,fontSize:13)),
+          Text('$runningVersion • ${realtime?'Online':'Reconectando'}',
+            style:TextStyle(fontSize:10,color:realtime?const Color(0xFF55D6A0):muted))
+        ])),
+        IconButton(tooltip:'Sair da conta',icon:const Icon(Icons.logout,size:19),
+          onPressed:() async {
+            stopRealtime();
+            try{await api.request('POST','/api/logout');}catch(_){}
+            api.token=null;pendingMessage=null;
+            try{await storage.delete(key:'veylor_session');}catch(_){}
+            if(mounted)setState((){
+              nick=null;serverId=null;dmId=null;realtime=false;
+              servers=[];channels=[];dms=[];messages=[];memberPreview=[];
+            });
+          })
+      ])),
+  ])));
+
+  Widget rails()=>Row(children:[_serverRail(),_channelRail()]);
+
+  Widget _memberPanel()=>Container(width:238,color:surface,child:Column(
+    crossAxisAlignment:CrossAxisAlignment.start,children:[
+      const Padding(padding:EdgeInsets.fromLTRB(20,24,16,12),
+        child:Text('MEMBROS',style:TextStyle(color:muted,fontSize:12,
+          fontWeight:FontWeight.w700,letterSpacing:1))),
+      Expanded(child:ListView(children:[
+        for(final person in memberPreview)
+          ListTile(dense:true,leading:CircleAvatar(radius:15,
+              backgroundColor:highlight,child:Text(
+              (person['username']?.toString().isNotEmpty??false)
+                ?person['username'].toString().substring(0,1).toUpperCase():'?')),
+            title:Text(person['username']?.toString()??'Membro',
+              maxLines:1,overflow:TextOverflow.ellipsis,
+              style:const TextStyle(fontSize:13)),
+            subtitle:Text(person['role']?.toString()??'membro',
+              style:const TextStyle(fontSize:11,color:muted)))
+      ])),
+      TextButton.icon(onPressed:manageMembers,icon:const Icon(Icons.settings_outlined,size:17),
+        label:const Text('Gerenciar membros'))
+    ]));
+
+  Widget chat() {
+    final name=dmId!=null
+      ?(dms.where((d)=>d['id']==dmId).map((d)=>d['username']?.toString()??'DM').firstOrNull??'DM')
+      :(channels.where((c)=>c['id']==channelId).map((c)=>c['name']?.toString()??'geral').firstOrNull??'geral');
+    final active=dmId!=null||channelId!=null;
+    final query=searchController.text.trim().toLowerCase();
+    final visible=query.isEmpty?messages:messages.where((m)=>
+      (m['content']?.toString().toLowerCase().contains(query)??false)||
+      (m['username']?.toString().toLowerCase().contains(query)??false)).toList();
+    return Container(color:background,child:Column(children:[
+      Container(height:62,padding:const EdgeInsets.symmetric(horizontal:12),
+        child:Row(children:[
+          if(MediaQuery.sizeOf(context).width<730)
+            Builder(builder:(ctx)=>IconButton(onPressed:()=>Scaffold.of(ctx).openDrawer(),
+              tooltip:'Abrir servidores e canais',icon:const Icon(Icons.menu))),
+          Icon(dmId!=null?Icons.alternate_email:Icons.tag_rounded,
+            color:muted,size:23),
+          const SizedBox(width:10),
+          Expanded(child:Text(name,maxLines:1,overflow:TextOverflow.ellipsis,
+            style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700))),
+          Tooltip(message:realtime?'Conectado em tempo real':'Reconectando',
+            child:Icon(realtime?Icons.wifi:Icons.wifi_off,size:16,
+              color:realtime?const Color(0xFF55D6A0):Colors.orangeAccent)),
+          IconButton(tooltip:'Filtrar mensagens carregadas',
+            onPressed:()=>setState((){
+              searching=!searching;
+              if(!searching)searchController.clear();
+            }),icon:Icon(searching?Icons.search_off:Icons.search)),
+          IconButton(tooltip:'Membros',onPressed:_toggleMemberPanel,
+            icon:const Icon(Icons.people_alt_outlined)),
+          IconButton(tooltip:'Atualizar mensagens',onPressed:refresh,
+            icon:const Icon(Icons.refresh_rounded))
+        ])),
+      const Divider(height:1,color:Color(0xFF212226)),
+      if(searching)Padding(padding:const EdgeInsets.fromLTRB(14,8,14,6),
+        child:TextField(controller:searchController,autofocus:true,
+          onChanged:(_)=>setState((){}),
+          decoration:InputDecoration(isDense:true,prefixIcon:const Icon(Icons.search),
+            hintText:'Filtrar mensagens já carregadas',
+            suffixIcon:IconButton(onPressed:()=>setState(()=>searchController.clear()),
+              icon:const Icon(Icons.close)),filled:true,fillColor:surface))),
+      Expanded(child:!active
+        ?Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
+            const Icon(Icons.forum_outlined,size:48,color:muted),
+            const SizedBox(height:14),
+            const Text('Escolha um canal ou uma mensagem privada',
+              style:TextStyle(fontSize:16,fontWeight:FontWeight.w600)),
+            const SizedBox(height:8),
+            TextButton.icon(onPressed:startDm,icon:const Icon(Icons.add),
+              label:const Text('Iniciar conversa'))
+          ]))
+        :ListView.builder(controller:messageScroll,
+          padding:const EdgeInsets.fromLTRB(22,16,24,10),
+          itemCount:visible.length+1,itemBuilder:(ctx,i){
+            if(i==0) return Padding(padding:const EdgeInsets.only(bottom:24,top:18),
+              child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                CircleAvatar(radius:27,backgroundColor:highlight,
+                  child:Icon(dmId!=null?Icons.person:Icons.tag,
+                    color:Colors.white,size:29)),
+                const SizedBox(height:14),
+                Text(dmId!=null?'Conversa com $name':'Bem-vindo a #$name',
+                  style:const TextStyle(fontSize:25,fontWeight:FontWeight.w800)),
+                const SizedBox(height:6),
+                Text(dmId!=null?'Início da conversa privada.'
+                  :'Este é o começo do canal #$name.',
+                  style:const TextStyle(color:muted,fontSize:13)),
+                const SizedBox(height:18),const Divider(color:Colors.white12),
+                if(query.isNotEmpty&&visible.isEmpty)
+                  const Padding(padding:EdgeInsets.all(18),
+                    child:Text('Nenhuma mensagem carregada corresponde ao filtro.',
+                      style:TextStyle(color:muted)))
+              ]));
+            final m=visible[i-1];
+            final username=m['username']?.toString()??'Usuário';
+            return Padding(padding:const EdgeInsets.symmetric(vertical:6),
+              child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                CircleAvatar(radius:19,backgroundColor:highlight,
+                  child:Text(username.isEmpty?'?':username.substring(0,1).toUpperCase(),
+                    style:const TextStyle(fontWeight:FontWeight.w700,fontSize:15))),
+                const SizedBox(width:12),
+                Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text(username,style:const TextStyle(fontWeight:FontWeight.w700,fontSize:14)),
+                  const SizedBox(height:3),
+                  SelectableText(m['content']?.toString()??'',
+                    style:const TextStyle(height:1.45,fontSize:14,color:Color(0xFFE3E4EA)))
+                ]))
+              ]));
+          })),
+      if(error!=null)Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:5),
+        child:Text(error!,style:const TextStyle(color:Colors.orangeAccent,fontSize:12))),
+      if(active) Padding(padding:const EdgeInsets.fromLTRB(15,6,15,14),
+        child:Container(decoration:BoxDecoration(color:highlight,
+          borderRadius:BorderRadius.circular(11)),
+          padding:const EdgeInsets.symmetric(horizontal:10),
+          child:Row(children:[
+            const Icon(Icons.chat_bubble_outline,color:muted,size:21),
+            const SizedBox(width:9),
+            Expanded(child:TextField(controller:message,maxLines:5,minLines:1,
+              textInputAction:TextInputAction.send,onSubmitted:(_)=>send(),
+              style:const TextStyle(fontSize:14),
+              decoration:InputDecoration(filled:false,border:InputBorder.none,
+                hintText:dmId!=null?'Mensagem para $name':'Mensagem em #$name'))),
+            ValueListenableBuilder<TextEditingValue>(valueListenable:message,
+              builder:(_,value,__)=>IconButton(
+                tooltip:'Enviar mensagem',
+                onPressed:busy||sending||value.text.trim().isEmpty?null:send,
+                icon:const Icon(Icons.send_rounded,color:accent)))
+          ])))
+    ]));
+  }
+
+  Widget auth() => Center(child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:420),
+    child:Padding(padding:const EdgeInsets.all(24),child:Column(
+      mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
+        _brand(size:70),
+        const SizedBox(height:20),
+        Text(signup?'Criar conta Veylor':'Bem-vindo ao Veylor',
+          textAlign:TextAlign.center,style:const TextStyle(fontSize:27,fontWeight:FontWeight.bold)),
+        const SizedBox(height:14),
+        if(error!=null&&error!.startsWith('Sem conexão')||
+            error!=null&&error!.startsWith('Servidor indisponível'))
+          TextButton.icon(onPressed:restoreSession,
+            icon:const Icon(Icons.refresh),label:const Text('Tentar reconectar')),
+        TextButton.icon(
+          onPressed:busy?null:configureBackend,
+          icon:const Icon(Icons.dns_outlined,size:17),
+          label:Text('Servidor: ${api.baseUrl}',overflow:TextOverflow.ellipsis,maxLines:1)),
+        if(Platform.isAndroid||Platform.isWindows)TextButton.icon(
+          onPressed:()=>checkForUpdates(),icon:const Icon(Icons.system_update_alt,size:18),
+          label:const Text('Verificar atualização do app')),
+        const SizedBox(height:10),
+        if(sessionMoved)const Padding(
+          padding:EdgeInsets.only(bottom:10),
+          child:Text('Mudamos para um banco novo e seguro. Crie uma conta para começar. '
+            'O login anterior não foi transferido.',
+            textAlign:TextAlign.center,style:TextStyle(color:Colors.amberAccent,fontSize:12))),
+        TextField(controller:user,decoration:const InputDecoration(labelText:'Usuário')),
+        const SizedBox(height:14),
+        TextField(controller:password,obscureText:true,
+          onSubmitted:(_)=>authenticate(),decoration:const InputDecoration(labelText:'Senha')),
+        const SizedBox(height:20),
+        FilledButton(onPressed:busy?null:authenticate,
+          child:Padding(padding:const EdgeInsets.all(12),child:Text(signup?'Cadastrar':'Entrar'))),
+        const SizedBox(height:12),
+        OutlinedButton.icon(
+          onPressed:busy?null:loginWithDiscord,
+          icon:const Icon(Icons.open_in_browser_rounded),
+          label:const Padding(padding:EdgeInsets.all(11),
+            child:Text('Continuar com Discord'))),
+        const Padding(padding:EdgeInsets.symmetric(vertical:10),
+          child:Text('O Discord abrirá no navegador. A Veylor solicita apenas sua identidade.',
+            textAlign:TextAlign.center,style:TextStyle(color:muted,fontSize:11))),
+        TextButton(onPressed:()=>setState(()=>signup=!signup),
+          child:Text(signup?'Já tenho conta':'Criar conta')),
+        if(error!=null)Text(error!,textAlign:TextAlign.center,
+          style:const TextStyle(color:Colors.orangeAccent)),
+        const SizedBox(height:12),
+        Text('$runningVersion • Mensagens, comunidades e tempo real',textAlign:TextAlign.center)
+      ]))));
+  @override
+  Widget build(BuildContext context){
+    if(restoring)return const Scaffold(body:Center(child:CircularProgressIndicator()));
+    if(api.token==null)return Scaffold(body:auth());
+    final mobile=MediaQuery.sizeOf(context).width<730;
+    return Scaffold(
+      drawer:mobile?Drawer(width:315,child:rails()):null,
+      body:Row(children:[
+        if(!mobile)SizedBox(width:315,child:rails()),
+        Expanded(child:chat()),
+        if(!mobile&&MediaQuery.sizeOf(context).width>=1100&&showMembers)
+          _memberPanel(),
+      ]));
+  }
+}
+).hasMatch(token)||
+            profile is! Map||profile['username'] is! String){
+          throw const FormatException('Sessão Discord recebida é inválida.');
+        }
+        cancelled=true;
+        if(mounted){
+          Navigator.of(context,rootNavigator:true).pop();
+          progressVisible=false;
+        }
+        await modal;
+        api.token=token;
+        nick=profile['username'] as String;
+        await storage.write(key:'veylor_session',value:token);
+        await loadServers();
+        await loadDms();
+        startRealtime();
+        if(mounted)setState((){});
+        return;
+      }
+      if(!cancelled)throw StateError('Tempo para entrar com Discord esgotado. Tente novamente.');
+      await modal;
+    }catch(e){
+      if(mounted)setState((){
+        error=e is ApiException && e.statusCode==503
+          ?'Login Discord ainda não configurado no servidor.'
+          :'Não foi possível entrar com Discord: $e';
+      });
+    }finally{
+      if(progressVisible&&mounted)Navigator.of(context,rootNavigator:true).pop();
+      if(mounted)setState(()=>busy=false);
+    }
+  }
+
   Future<void> authenticate()=>perform(() async {
     api.baseUrl=validateApiEndpoint(api.baseUrl);
     final data=await api.request('POST',signup?'/api/register':'/api/login',
