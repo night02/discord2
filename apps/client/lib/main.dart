@@ -7,6 +7,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'update_service.dart';
+import 'windows_update_download.dart';
 import 'api_endpoint.dart';
 
 void main() => runApp(const VeylorApp());
@@ -155,9 +156,10 @@ class _HomeState extends State<Home> {
           Text(Platform.isAndroid
             ? 'O download exige acesso ao GitHub privado. APKs de teste podem ter '
               'assinaturas diferentes e exigir reinstalação.'
-            : 'O instalador abre a página oficial do GitHub privado. A instalação '
-              'é manual, não executamos arquivos remotamente. O Windows pode '
-              'mostrar um alerta por falta de assinatura digital.',
+            : 'O Windows baixa apenas a Release oficial e valida SHA-256 antes '
+              'de pedir sua confirmação. A Veylor é fechada para instalar e '
+              'uma cópia da versão anterior permite reverter falhas. '
+              'O instalador beta ainda não tem assinatura Authenticode.',
             style:const TextStyle(fontSize:12)),
         ]),
         actions:[
@@ -165,16 +167,107 @@ class _HomeState extends State<Home> {
             child:const Text('Depois')),
           FilledButton(onPressed:() async {
             Navigator.of(dialogContext).pop();
-            final success=await launchUrl(update.downloadUrl,mode:LaunchMode.externalApplication);
-            if(!success&&mounted)ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content:Text('Não foi possível abrir o GitHub.')));
-          },child:const Text('Abrir download'))
+            if (Platform.isWindows && update is WindowsUpdate &&
+                update.downloadUrl.path.contains('/releases/tag/')) {
+              await downloadWindowsUpdate(update);
+            } else {
+              final success=await launchUrl(update.downloadUrl,mode:LaunchMode.externalApplication);
+              if(!success&&mounted)ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content:Text('Não foi possível abrir o GitHub.')));
+            }
+          },child:Text(Platform.isWindows && update.downloadUrl.path.contains('/releases/tag/')
+              ? 'Baixar atualização' : 'Abrir download'))
         ]));
     }catch(e){
       if(!silent&&mounted)ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content:Text('Falha ao verificar atualização: $e')));
     }finally{checkingUpdate=false;}
   }
+  Future<void> downloadWindowsUpdate(WindowsUpdate update) async {
+    if (!Platform.isWindows || !mounted) return;
+    final downloader=VeylorWindowsDownloader();
+    final progress=ValueNotifier<double>(0);
+    bool cancelled=false;
+    WindowsUpdatePackage? staged;
+    final progressDialog=showDialog<void>(
+      context:context, barrierDismissible:false,
+      builder:(ctx)=>AlertDialog(
+        title:const Text('Baixando instalador oficial'),
+        content:Column(mainAxisSize:MainAxisSize.min,children:[
+          ValueListenableBuilder<double>(valueListenable:progress,
+            builder:(_,value,__)=>Column(children:[
+              LinearProgressIndicator(value:value),
+              const SizedBox(height:12),
+              Text('${(value*100).toStringAsFixed(0)}% — verificaremos o SHA-256 antes de instalar.')
+            ]))
+        ]),
+        actions:[TextButton(onPressed:()=>cancelled=true,child:const Text('Cancelar download'))],
+      ));
+    try {
+      staged=await downloader.prepare(update,
+        cancelled:()=>cancelled,
+        onProgress:(received,total){if(total>0)progress.value=received/total;});
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content:Text('Atualização recusada: $e')));
+      return;
+    } finally {
+      downloader.close();
+      if (mounted) Navigator.of(context,rootNavigator:true).pop();
+      await progressDialog;
+      progress.dispose();
+    }
+    if (!mounted || cancelled) {
+      await staged.discard();
+      return;
+    }
+    final installer=staged.installer;
+    final current=(await PackageInfo.fromPlatform()).version;
+    final approved=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:Text('Instalar Veylor ${staged!.version}?'),
+      content:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+        Text('Versão atual: $current'),
+        Text('Instalador: ${installer.path.split(Platform.pathSeparator).last}'),
+        const SizedBox(height:8),
+        Text('SHA-256 verificado: ${staged.sha256.substring(0,16)}…',
+          style:const TextStyle(fontSize:12)),
+        const SizedBox(height:12),
+        const Text('Ao confirmar, a Veylor será fechada e a instalação começará. '
+          'O atualizador salva uma cópia dos arquivos anteriores e tenta '
+          'restaurá-la se a instalação falhar. Sem certificado Windows, '
+          'o sistema pode exibir um aviso de segurança.'),
+      ]),
+      actions:[
+        TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Agora não')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Instalar e reiniciar'))
+      ]));
+    if(approved!=true){await staged.discard();return;}
+    try {
+      final currentExe=File(Platform.resolvedExecutable);
+      if(currentExe.uri.pathSegments.last.toLowerCase()!='veylor.exe') {
+        throw const FormatException('Atualizador só funciona no aplicativo Windows instalado.');
+      }
+      final helper=File('${currentExe.parent.path}${Platform.pathSeparator}veylor-updater.exe');
+      if(!await helper.exists()) {
+        throw const FileSystemException('Componente de atualização não encontrado');
+      }
+      final copy=await helper.copy('${staged.directory.path}${Platform.pathSeparator}veylor-updater.exe');
+      await Process.start(copy.path,[
+        '--installer',installer.path,
+        '--sha256',staged.sha256,
+        '--install-dir',currentExe.parent.path,
+        '--parent-pid','$pid',
+        '--target-version',staged.version,
+      ],mode:ProcessStartMode.detached);
+      // The separate helper waits until this Windows process has fully exited.
+      exit(0);
+    } catch(e){
+      await staged.discard();
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content:Text('Instalação não iniciada: $e')));
+    }
+  }
+
   Future<void> configureBackend() async {
     final controller=TextEditingController(text:api.baseUrl);
     final address=await showDialog<String>(context:context,builder:(ctx)=>AlertDialog(
