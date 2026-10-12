@@ -92,7 +92,7 @@ test('OAuth requires app-only secret and consumes the session exactly once',asyn
     const done=await oauth.poll({request_id:started.request_id,poll_secret:started.poll_secret});
     assert.equal(done.status,'ready');
     assert.match(done.token,/^[a-f0-9]{64}$/);
-    assert.equal(done.user.username,'dc_345678901234567890');
+    assert.match(done.user.username,/^discord_[a-f0-9]{16}$/);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM discord_accounts').get().count,1);
     assert.equal(db.prepare('SELECT COUNT(*) AS count FROM servers').get().count,1);
     await assert.rejects(oauth.poll({
