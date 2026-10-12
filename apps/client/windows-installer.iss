@@ -1,5 +1,5 @@
 #define MyAppName "Veylor"
-#define MyAppVersion "0.3.7"
+#define MyAppVersion "0.3.8"
 #define MyAppExeName "veylor.exe"
 
 [Setup]
@@ -12,7 +12,7 @@ DefaultDirName={localappdata}\Programs\Veylor
 DefaultGroupName=Veylor
 DisableProgramGroupPage=yes
 OutputDir=dist
-OutputBaseFilename=Veylor-v0.3.7-Setup-Windows-x64
+OutputBaseFilename=Veylor-v0.3.8-Setup-Windows-x64
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest
@@ -20,6 +20,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
+SetupIconFile=windows\runner\resources\app_icon.ico
 CloseApplications=yes
 RestartApplications=no
 SetupLogging=yes

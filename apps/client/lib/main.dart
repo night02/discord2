@@ -17,9 +17,12 @@ void main(List<String> args) {
   _startupArguments = List<String>.unmodifiable(args);
   runApp(const VeylorApp());
 }
-const accent = Color(0xFF7565EE);
-const surface = Color(0xFF202127);
-const sidebar = Color(0xFF15161B);
+const accent = Color(0xFF4BA9F4);
+const surface = Color(0xFF232428);
+const sidebar = Color(0xFF191A20);
+const background = Color(0xFF303137);
+const highlight = Color(0xFF373A44);
+const muted = Color(0xFF9FA3B1);
 
 class Api {
   Api(this.baseUrl);
@@ -58,9 +61,9 @@ class VeylorApp extends StatelessWidget {
   final bool sessionRestorationEnabled;
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title:'Veylor 2.0',debugShowCheckedModeBanner:false,
+    title:'Veylor',debugShowCheckedModeBanner:false,
     theme:ThemeData.dark(useMaterial3:true).copyWith(
-      scaffoldBackgroundColor:const Color(0xFF292B34),
+      scaffoldBackgroundColor:background,
       colorScheme:const ColorScheme.dark(primary:accent,surface:surface),
       inputDecorationTheme:InputDecorationTheme(
         filled:true,fillColor:sidebar,
@@ -76,6 +79,10 @@ class Home extends StatefulWidget {
 class _HomeState extends State<Home> {
   final api=Api(const String.fromEnvironment('VEYLOR_API_URL',defaultValue:'https://veylor-postgres-staging.onrender.com'));
   final user=TextEditingController(),password=TextEditingController(),message=TextEditingController();
+  final searchController=TextEditingController();
+  final messageScroll=ScrollController();
+  bool showMembers=false,searching=false;
+  List<Map<String,dynamic>> memberPreview=[];
   Timer? polling,retrySocket;
   WebSocket? socket;
   final backoff=RetryBackoff();
@@ -114,7 +121,7 @@ class _HomeState extends State<Home> {
   @override
   void dispose() {
     stopRealtime();
-    user.dispose();password.dispose();message.dispose();super.dispose();
+    user.dispose();password.dispose();message.dispose();searchController.dispose();messageScroll.dispose();super.dispose();
   }
   Future<void> restoreSession() async {
     try {
@@ -562,6 +569,7 @@ class _HomeState extends State<Home> {
         if(message.text.trim()==text)message.clear();
         if(identical(pendingMessage,pending))pendingMessage=null;
         await refresh();
+        _scrollToLatest();
       });
     }finally{sending=false;}
   }
@@ -613,126 +621,337 @@ class _HomeState extends State<Home> {
         actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Entendi'))]));
     });
   }
-  Widget rails() => Row(children:[
-    Container(width:70,color:sidebar,child:Column(children:[
-      const Padding(padding:EdgeInsets.all(12),child:Icon(Icons.bubble_chart,color:accent,size:34)),
-      Expanded(child:ListView(children:[
-        for(final s in servers) Padding(padding:const EdgeInsets.all(6),
-          child:Tooltip(message:s['name'] as String,child:InkWell(
-            onTap:()=>perform(() async {dmId=null;serverId=s['id'] as String;await loadChannels();}),
-            child:Container(height:50,alignment:Alignment.center,
-              decoration:BoxDecoration(color:serverId==s['id']?accent:surface,
-                borderRadius:BorderRadius.circular(17)),
-              child:Text((s['name'] as String).substring(0,1).toUpperCase(),
-                style:const TextStyle(fontSize:21,fontWeight:FontWeight.bold)))))),
-        IconButton(tooltip:'Criar servidor',onPressed:createServer,icon:const Icon(Icons.add_circle_outline)),
-        IconButton(tooltip:'Entrar com convite',onPressed:joinInvite,icon:const Icon(Icons.login)),
-      ]))])),
-    Expanded(child:Container(color:surface,child:Column(children:[
-      ListTile(title:Text(servers.where((s)=>s['id']==serverId).map((s)=>s['name'] as String)
-        .firstOrNull??'Veylor',maxLines:1,overflow:TextOverflow.ellipsis),
-        trailing:IconButton(tooltip:'Convite',onPressed:invite,icon:const Icon(Icons.person_add))),
-      const Divider(height:1),
-      ListTile(title:const Text('MENSAGENS PRIVADAS',style:TextStyle(fontSize:11,color:Colors.white54)),
-        trailing:IconButton(icon:const Icon(Icons.add,size:19),tooltip:'Nova DM',onPressed:startDm)),
+
+  void _scrollToLatest() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !messageScroll.hasClients) return;
+      messageScroll.animateTo(messageScroll.position.maxScrollExtent,
+        duration:const Duration(milliseconds:220),curve:Curves.easeOutCubic);
+    });
+  }
+
+  void _closeMobileNavigation() {
+    if (MediaQuery.sizeOf(context).width < 730 && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _selectDm(Map<String,dynamic> conversation) async {
+    await perform(() async {
+      dmId=conversation['id'] as String;
+      cursor=0;messages=[];searchController.clear();
+      await refresh();
+      if(mounted) setState(() {});
+      _closeMobileNavigation();
+      _scrollToLatest();
+    });
+  }
+
+  Future<void> _selectChannel(Map<String,dynamic> channel) async {
+    await perform(() async {
+      dmId=null;channelId=channel['id'] as String;
+      cursor=0;messages=[];searchController.clear();
+      await refresh();
+      if(mounted) setState(() {});
+      _closeMobileNavigation();
+      _scrollToLatest();
+    });
+  }
+
+  Future<void> _toggleMemberPanel() async {
+    if (serverId==null) return;
+    if (MediaQuery.sizeOf(context).width < 1100) {
+      await manageMembers();
+      return;
+    }
+    setState(() => showMembers=!showMembers);
+    if(!showMembers) return;
+    final requestedServer=serverId!;
+    try {
+      final result=await api.request('GET','/api/servers/$requestedServer/members');
+      if(mounted&&serverId==requestedServer) {
+        setState(()=>memberPreview=List<Map<String,dynamic>>.from(result['members'] as List));
+      }
+    } catch(e) {
+      if(mounted) setState(()=>error='Não foi possível carregar membros: $e');
+    }
+  }
+
+  Widget _brand({double size=48})=>ClipRRect(
+    borderRadius:BorderRadius.circular(size*.26),
+    child:Image.asset('assets/veylor_logo.png',width:size,height:size,fit:BoxFit.cover,
+      filterQuality:FilterQuality.medium));
+
+  Widget _serverRail() => Container(width:72,color:sidebar,child:Column(children:[
+    const SizedBox(height:12),
+    Tooltip(message:'Veylor',child:_brand(size:48)),
+    Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:12),
+      child:Container(height:1,color:Colors.white12)),
+    Expanded(child:ListView(padding:EdgeInsets.zero,children:[
+      for(final server in servers)
+        Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),
+          child:Tooltip(message:server['name']?.toString()??'Servidor',
+            child:Material(color:serverId==server['id']?accent:surface,
+              borderRadius:BorderRadius.circular(serverId==server['id']?16:24),
+              clipBehavior:Clip.antiAlias,
+              child:InkWell(
+                key:ValueKey('server-${server['id']}'),
+                onTap:()=>perform(() async {
+                  dmId=null;serverId=server['id'] as String;
+                  memberPreview=[];showMembers=false;
+                  await loadChannels();_closeMobileNavigation();
+                }),
+                child:SizedBox(height:48,child:Center(
+                  child:Text((server['name']?.toString().isNotEmpty??false)
+                     ?server['name'].toString().substring(0,1).toUpperCase():'?',
+                    style:const TextStyle(fontSize:20,fontWeight:FontWeight.w700)))))))),
+      Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),
+        child:Tooltip(message:'Criar servidor',child:IconButton.filledTonal(
+          onPressed:createServer,icon:const Icon(Icons.add,size:25)))),
+      Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:5),
+        child:Tooltip(message:'Entrar com convite',child:IconButton.filledTonal(
+          onPressed:joinInvite,icon:const Icon(Icons.login_rounded,size:22)))),
+    ])),
+  ]));
+
+  Widget _sectionHeader(String title,VoidCallback? onAdd)=>Padding(
+    padding:const EdgeInsets.fromLTRB(14,16,8,5),
+    child:Row(children:[
+      Expanded(child:Text(title,style:const TextStyle(color:muted,fontSize:11,
+        fontWeight:FontWeight.w700,letterSpacing:.65))),
+      if(onAdd!=null)IconButton(
+        tooltip:'Adicionar $title',visualDensity:VisualDensity.compact,
+        onPressed:onAdd,icon:const Icon(Icons.add,size:18,color:muted)),
+    ]));
+
+  Widget _navEntry({required String title,required IconData icon,
+    required bool selected,required VoidCallback onTap,String? keyId})=>
+    Padding(padding:const EdgeInsets.symmetric(horizontal:8,vertical:2),
+      child:Material(color:selected?highlight:Colors.transparent,
+        borderRadius:BorderRadius.circular(7),
+        child:InkWell(key:keyId==null?null:ValueKey(keyId),
+          onTap:onTap,borderRadius:BorderRadius.circular(7),
+          child:Padding(padding:const EdgeInsets.symmetric(horizontal:10,vertical:10),
+            child:Row(children:[
+              Icon(icon,size:19,color:selected?Colors.white:muted),
+              const SizedBox(width:12),
+              Expanded(child:Text(title,maxLines:1,overflow:TextOverflow.ellipsis,
+                style:TextStyle(color:selected?Colors.white:muted,
+                  fontWeight:selected?FontWeight.w600:FontWeight.w500,fontSize:14))),
+            ])))));
+
+  Widget _channelRail()=>Expanded(child:Container(color:surface,child:Column(children:[
+    SizedBox(height:62,child:Padding(padding:const EdgeInsets.symmetric(horizontal:14),
+      child:Row(children:[
+        Expanded(child:Text(servers.where((s)=>s['id']==serverId)
+          .map((s)=>s['name']?.toString()??'Veylor').firstOrNull??'Veylor',
+          maxLines:1,overflow:TextOverflow.ellipsis,
+          style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700))),
+        IconButton(onPressed:serverId==null?null:invite,tooltip:'Criar convite',
+          icon:const Icon(Icons.person_add_alt_1_outlined,size:21))
+      ]))),
+    const Divider(height:1,color:Color(0xFF17181D)),
+    Expanded(child:ListView(children:[
+      _sectionHeader('MENSAGENS PRIVADAS',startDm),
       for(final d in dms)
-        ListTile(dense:true,leading:const Icon(Icons.person_outline,size:19),
-          title:Text(d['username'] as String),selected:dmId==d['id'],
-          onTap:()=>perform(() async {
-            dmId=d['id'] as String;cursor=0;messages=[];await refresh();
-            if(mounted&&MediaQuery.sizeOf(context).width<730)Navigator.pop(context);
-          })),
-      ListTile(title:const Text('CANAIS DE TEXTO',style:TextStyle(fontSize:11,color:Colors.white54)),
-        trailing:canManage?IconButton(icon:const Icon(Icons.add,size:19),tooltip:'Criar texto',
-          onPressed:()=>createChannel('text')):null),
+        _navEntry(title:d['username']?.toString()??'Conversa',
+          icon:Icons.person_outline_rounded,selected:dmId==d['id'],
+          keyId:'dm-${d['id']}',onTap:()=>_selectDm(d)),
+      _sectionHeader('CANAIS DE TEXTO',canManage?()=>createChannel('text'):null),
       for(final c in channels.where((c)=>c['type']=='text'))
-        ListTile(dense:true,leading:const Icon(Icons.tag,size:18),title:Text(c['name'] as String),
-          selected:channelId==c['id'],
-          onTap:()=>perform(() async {
-            dmId=null;channelId=c['id'] as String;cursor=0;messages=[];await refresh();
-            if(mounted&&MediaQuery.sizeOf(context).width<730)Navigator.pop(context);
-          })),
-      ListTile(title:const Text('CANAIS DE VOZ',style:TextStyle(fontSize:11,color:Colors.white54)),
-        trailing:canManage?IconButton(icon:const Icon(Icons.add,size:19),tooltip:'Criar voz',
-          onPressed:()=>createChannel('voice')):null),
+        _navEntry(title:c['name']?.toString()??'canal',
+          icon:Icons.tag_rounded,selected:dmId==null&&channelId==c['id'],
+          keyId:'channel-${c['id']}',onTap:()=>_selectChannel(c)),
+      _sectionHeader('CANAIS DE VOZ',canManage?()=>createChannel('voice'):null),
       for(final c in channels.where((c)=>c['type']=='voice'))
-        ListTile(dense:true,leading:const Icon(Icons.volume_up_outlined,size:18),
-          title:Text(c['name'] as String),onTap:()=>voice(c)),
-      const Spacer(),
-      if(Platform.isAndroid||Platform.isWindows)ListTile(
-        leading:const Icon(Icons.system_update_alt),
-        title:const Text('Verificar atualização'),
-        onTap:()=>checkForUpdates()),
-      if (Platform.isWindows) ListTile(
-        leading: const Icon(Icons.folder_open_outlined),
-        title: const Text('Logs de atualização'),
-        onTap: () async {
+        _navEntry(title:c['name']?.toString()??'voz',
+          icon:Icons.volume_up_outlined,selected:false,
+          keyId:'voice-${c['id']}',onTap:()=>voice(c)),
+      const SizedBox(height:20),
+    ])),
+    const Divider(height:1,color:Color(0xFF17181D)),
+    _navEntry(title:'Membros do servidor',icon:Icons.group_outlined,
+      selected:showMembers,onTap:_toggleMemberPanel),
+    if(Platform.isAndroid||Platform.isWindows)
+      _navEntry(title:'Verificar atualização',icon:Icons.system_update_alt_rounded,
+        selected:false,onTap:()=>checkForUpdates()),
+    if(Platform.isWindows)
+      _navEntry(title:'Logs de atualização',icon:Icons.folder_open_outlined,
+        selected:false,onTap:() async {
           try {
-            final folder = UpdateDiagnostics.logDirectory;
-            await folder.create(recursive: true);
-            await Process.start('explorer.exe', [folder.path],
-              mode: ProcessStartMode.detached);
+            final folder=UpdateDiagnostics.logDirectory;
+            await folder.create(recursive:true);
+            await Process.start('explorer.exe',[folder.path],
+                mode:ProcessStartMode.detached);
           } catch (_) {
-            if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Não foi possível abrir a pasta de logs.')));
+            if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content:Text('Não foi possível abrir a pasta de logs.')));
           }
         }),
-      ListTile(leading:const Icon(Icons.groups_2_outlined),title:const Text('Membros'),onTap:manageMembers),
-      Container(color:sidebar,child:ListTile(
-        leading:const CircleAvatar(backgroundColor:accent,child:Icon(Icons.person)),
-        title:Text(nick??'Conta'),subtitle:Text('$runningVersion • ${realtime ? 'Online' : 'Reconectando'}'),
-        trailing:IconButton(tooltip:'Sair',icon:const Icon(Icons.logout),onPressed:() async {
-          stopRealtime();
-          try{await api.request('POST','/api/logout');}catch(_){}
-          api.token=null;pendingMessage=null;
-          try{await storage.delete(key:'veylor_session');}catch(_){}
-          if(mounted)setState((){nick=null;serverId=null;dmId=null;realtime=false;servers=[];channels=[];dms=[];messages=[];});
-        })))
-    ])))
-  ]);
-  Widget chat() {
-    final name=dmId!=null?(dms.where((d)=>d['id']==dmId).map((d)=>d['username'] as String).firstOrNull??'DM'):
-      (channels.where((c)=>c['id']==channelId).map((c)=>c['name'] as String).firstOrNull??'geral');
-    return Column(children:[
-      SizedBox(height:58,child:Row(children:[
-        if(MediaQuery.sizeOf(context).width<730)
-          Builder(builder:(ctx)=>IconButton(onPressed:()=>Scaffold.of(ctx).openDrawer(),
-            icon:const Icon(Icons.menu))),
-        const SizedBox(width:15),Icon(dmId!=null?Icons.person_outline:Icons.tag,color:Colors.white54),
-        const SizedBox(width:8),Text(name,style:const TextStyle(fontSize:17,fontWeight:FontWeight.bold)),
-        const SizedBox(width:10),Icon(realtime?Icons.wifi:Icons.wifi_off,size:15,color:realtime?Colors.greenAccent:Colors.orangeAccent),
-        const Spacer(),IconButton(tooltip:'Atualizar',onPressed:refresh,icon:const Icon(Icons.refresh))
+    Container(color:sidebar,padding:const EdgeInsets.symmetric(horizontal:6,vertical:6),
+      child:Row(children:[
+        CircleAvatar(radius:18,backgroundColor:accent,
+          child:Text((nick??'V').substring(0,1).toUpperCase(),
+            style:const TextStyle(fontWeight:FontWeight.w700,color:Colors.black))),
+        const SizedBox(width:9),
+        Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+          Text(nick??'Conta',maxLines:1,overflow:TextOverflow.ellipsis,
+            style:const TextStyle(fontWeight:FontWeight.w700,fontSize:13)),
+          Text('$runningVersion • ${realtime?'Online':'Reconectando'}',
+            style:TextStyle(fontSize:10,color:realtime?const Color(0xFF55D6A0):muted))
+        ])),
+        IconButton(tooltip:'Sair da conta',icon:const Icon(Icons.logout,size:19),
+          onPressed:() async {
+            stopRealtime();
+            try{await api.request('POST','/api/logout');}catch(_){}
+            api.token=null;pendingMessage=null;
+            try{await storage.delete(key:'veylor_session');}catch(_){}
+            if(mounted)setState((){
+              nick=null;serverId=null;dmId=null;realtime=false;
+              servers=[];channels=[];dms=[];messages=[];memberPreview=[];
+            });
+          })
       ])),
-      const Divider(height:1),
-      Expanded(child:ListView.builder(padding:const EdgeInsets.all(20),
-        itemCount:messages.length+1,itemBuilder:(ctx,i){
-          if(i==0)return Padding(padding:const EdgeInsets.only(bottom:22),
-            child:Text('Bem-vindo '+(dmId!=null?'à conversa com ':'a #')+name,style:const TextStyle(fontSize:23,fontWeight:FontWeight.bold)));
-          final m=messages[i-1];
-          return Padding(padding:const EdgeInsets.symmetric(vertical:9),child:Row(
-            crossAxisAlignment:CrossAxisAlignment.start,children:[
-              CircleAvatar(radius:18,backgroundColor:accent,
-                child:Text((m['username'] as String)[0].toUpperCase())),
-              const SizedBox(width:12),
-              Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-                Text(m['username'] as String,style:const TextStyle(fontWeight:FontWeight.bold)),
-                const SizedBox(height:3),SelectableText(m['content'] as String)
-              ]))
-            ]));
-        })),
-      if(error!=null)Text(error!,style:const TextStyle(color:Colors.orangeAccent)),
-      Padding(padding:const EdgeInsets.all(14),child:Row(children:[
-        Expanded(child:TextField(controller:message,maxLines:4,minLines:1,
-          onSubmitted:(_)=>send(),decoration:InputDecoration(hintText:dmId!=null?'Mensagem para '+name:'Mensagem em #'+name))),
-        const SizedBox(width:8),
-        IconButton.filled(onPressed:busy?null:send,icon:const Icon(Icons.send))
-      ]))
-    ]);
+  ])));
+
+  Widget rails()=>Row(children:[_serverRail(),_channelRail()]);
+
+  Widget _memberPanel()=>Container(width:238,color:surface,child:Column(
+    crossAxisAlignment:CrossAxisAlignment.start,children:[
+      const Padding(padding:EdgeInsets.fromLTRB(20,24,16,12),
+        child:Text('MEMBROS',style:TextStyle(color:muted,fontSize:12,
+          fontWeight:FontWeight.w700,letterSpacing:1))),
+      Expanded(child:ListView(children:[
+        for(final person in memberPreview)
+          ListTile(dense:true,leading:CircleAvatar(radius:15,
+              backgroundColor:highlight,child:Text(
+              (person['username']?.toString().isNotEmpty??false)
+                ?person['username'].toString().substring(0,1).toUpperCase():'?')),
+            title:Text(person['username']?.toString()??'Membro',
+              maxLines:1,overflow:TextOverflow.ellipsis,
+              style:const TextStyle(fontSize:13)),
+            subtitle:Text(person['role']?.toString()??'membro',
+              style:const TextStyle(fontSize:11,color:muted)))
+      ])),
+      TextButton.icon(onPressed:manageMembers,icon:const Icon(Icons.settings_outlined,size:17),
+        label:const Text('Gerenciar membros'))
+    ]));
+
+  Widget chat() {
+    final name=dmId!=null
+      ?(dms.where((d)=>d['id']==dmId).map((d)=>d['username']?.toString()??'DM').firstOrNull??'DM')
+      :(channels.where((c)=>c['id']==channelId).map((c)=>c['name']?.toString()??'geral').firstOrNull??'geral');
+    final active=dmId!=null||channelId!=null;
+    final query=searchController.text.trim().toLowerCase();
+    final visible=query.isEmpty?messages:messages.where((m)=>
+      (m['content']?.toString().toLowerCase().contains(query)??false)||
+      (m['username']?.toString().toLowerCase().contains(query)??false)).toList();
+    return Container(color:background,child:Column(children:[
+      Container(height:62,padding:const EdgeInsets.symmetric(horizontal:12),
+        child:Row(children:[
+          if(MediaQuery.sizeOf(context).width<730)
+            Builder(builder:(ctx)=>IconButton(onPressed:()=>Scaffold.of(ctx).openDrawer(),
+              tooltip:'Abrir servidores e canais',icon:const Icon(Icons.menu))),
+          Icon(dmId!=null?Icons.alternate_email:Icons.tag_rounded,
+            color:muted,size:23),
+          const SizedBox(width:10),
+          Expanded(child:Text(name,maxLines:1,overflow:TextOverflow.ellipsis,
+            style:const TextStyle(fontSize:16,fontWeight:FontWeight.w700))),
+          Tooltip(message:realtime?'Conectado em tempo real':'Reconectando',
+            child:Icon(realtime?Icons.wifi:Icons.wifi_off,size:16,
+              color:realtime?const Color(0xFF55D6A0):Colors.orangeAccent)),
+          IconButton(tooltip:'Filtrar mensagens carregadas',
+            onPressed:()=>setState((){
+              searching=!searching;
+              if(!searching)searchController.clear();
+            }),icon:Icon(searching?Icons.search_off:Icons.search)),
+          IconButton(tooltip:'Membros',onPressed:_toggleMemberPanel,
+            icon:const Icon(Icons.people_alt_outlined)),
+          IconButton(tooltip:'Atualizar mensagens',onPressed:refresh,
+            icon:const Icon(Icons.refresh_rounded))
+        ])),
+      const Divider(height:1,color:Color(0xFF212226)),
+      if(searching)Padding(padding:const EdgeInsets.fromLTRB(14,8,14,6),
+        child:TextField(controller:searchController,autofocus:true,
+          onChanged:(_)=>setState((){}),
+          decoration:InputDecoration(isDense:true,prefixIcon:const Icon(Icons.search),
+            hintText:'Filtrar mensagens já carregadas',
+            suffixIcon:IconButton(onPressed:()=>setState(()=>searchController.clear()),
+              icon:const Icon(Icons.close)),filled:true,fillColor:surface))),
+      Expanded(child:!active
+        ?Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
+            const Icon(Icons.forum_outlined,size:48,color:muted),
+            const SizedBox(height:14),
+            const Text('Escolha um canal ou uma mensagem privada',
+              style:TextStyle(fontSize:16,fontWeight:FontWeight.w600)),
+            const SizedBox(height:8),
+            TextButton.icon(onPressed:startDm,icon:const Icon(Icons.add),
+              label:const Text('Iniciar conversa'))
+          ]))
+        :ListView.builder(controller:messageScroll,
+          padding:const EdgeInsets.fromLTRB(22,16,24,10),
+          itemCount:visible.length+1,itemBuilder:(ctx,i){
+            if(i==0) return Padding(padding:const EdgeInsets.only(bottom:24,top:18),
+              child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                CircleAvatar(radius:27,backgroundColor:highlight,
+                  child:Icon(dmId!=null?Icons.person:Icons.tag,
+                    color:Colors.white,size:29)),
+                const SizedBox(height:14),
+                Text(dmId!=null?'Conversa com $name':'Bem-vindo a #$name',
+                  style:const TextStyle(fontSize:25,fontWeight:FontWeight.w800)),
+                const SizedBox(height:6),
+                Text(dmId!=null?'Início da conversa privada.'
+                  :'Este é o começo do canal #$name.',
+                  style:const TextStyle(color:muted,fontSize:13)),
+                const SizedBox(height:18),const Divider(color:Colors.white12),
+                if(query.isNotEmpty&&visible.isEmpty)
+                  const Padding(padding:EdgeInsets.all(18),
+                    child:Text('Nenhuma mensagem carregada corresponde ao filtro.',
+                      style:TextStyle(color:muted)))
+              ]));
+            final m=visible[i-1];
+            final username=m['username']?.toString()??'Usuário';
+            return Padding(padding:const EdgeInsets.symmetric(vertical:6),
+              child:Row(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                CircleAvatar(radius:19,backgroundColor:highlight,
+                  child:Text(username.isEmpty?'?':username.substring(0,1).toUpperCase(),
+                    style:const TextStyle(fontWeight:FontWeight.w700,fontSize:15))),
+                const SizedBox(width:12),
+                Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+                  Text(username,style:const TextStyle(fontWeight:FontWeight.w700,fontSize:14)),
+                  const SizedBox(height:3),
+                  SelectableText(m['content']?.toString()??'',
+                    style:const TextStyle(height:1.45,fontSize:14,color:Color(0xFFE3E4EA)))
+                ]))
+              ]));
+          })),
+      if(error!=null)Padding(padding:const EdgeInsets.symmetric(horizontal:18,vertical:5),
+        child:Text(error!,style:const TextStyle(color:Colors.orangeAccent,fontSize:12))),
+      if(active) Padding(padding:const EdgeInsets.fromLTRB(15,6,15,14),
+        child:Container(decoration:BoxDecoration(color:highlight,
+          borderRadius:BorderRadius.circular(11)),
+          padding:const EdgeInsets.symmetric(horizontal:10),
+          child:Row(children:[
+            const Icon(Icons.chat_bubble_outline,color:muted,size:21),
+            const SizedBox(width:9),
+            Expanded(child:TextField(controller:message,maxLines:5,minLines:1,
+              textInputAction:TextInputAction.send,onSubmitted:(_)=>send(),
+              style:const TextStyle(fontSize:14),
+              decoration:InputDecoration(filled:false,border:InputBorder.none,
+                hintText:dmId!=null?'Mensagem para $name':'Mensagem em #$name'))),
+            ValueListenableBuilder<TextEditingValue>(valueListenable:message,
+              builder:(_,value,__)=>IconButton(
+                tooltip:'Enviar mensagem',
+                onPressed:busy||sending||value.text.trim().isEmpty?null:send,
+                icon:const Icon(Icons.send_rounded,color:accent)))
+          ])))
+    ]));
   }
+
   Widget auth() => Center(child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:420),
     child:Padding(padding:const EdgeInsets.all(24),child:Column(
       mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
-        const Icon(Icons.bubble_chart_rounded,color:accent,size:65),
+        _brand(size:70),
         const SizedBox(height:20),
         Text(signup?'Criar conta Veylor':'Bem-vindo ao Veylor',
           textAlign:TextAlign.center,style:const TextStyle(fontSize:27,fontWeight:FontWeight.bold)),
@@ -766,7 +985,7 @@ class _HomeState extends State<Home> {
         if(error!=null)Text(error!,textAlign:TextAlign.center,
           style:const TextStyle(color:Colors.orangeAccent)),
         const SizedBox(height:12),
-        const Text('Veylor V0.3.4 • PostgreSQL, DMs e tempo real',textAlign:TextAlign.center)
+        Text('$runningVersion • Mensagens, comunidades e tempo real',textAlign:TextAlign.center)
       ]))));
   @override
   Widget build(BuildContext context){
@@ -774,7 +993,12 @@ class _HomeState extends State<Home> {
     if(api.token==null)return Scaffold(body:auth());
     final mobile=MediaQuery.sizeOf(context).width<730;
     return Scaffold(
-      drawer:mobile?Drawer(width:335,child:rails()):null,
-      body:Row(children:[if(!mobile)SizedBox(width:315,child:rails()),Expanded(child:chat())]));
+      drawer:mobile?Drawer(width:315,child:rails()):null,
+      body:Row(children:[
+        if(!mobile)SizedBox(width:315,child:rails()),
+        Expanded(child:chat()),
+        if(!mobile&&MediaQuery.sizeOf(context).width>=1100&&showMembers)
+          _memberPanel(),
+      ]));
   }
 }

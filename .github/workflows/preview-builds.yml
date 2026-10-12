@@ -40,12 +40,14 @@ jobs:
           $errors = $null
           [System.Management.Automation.Language.Parser]::ParseFile("$env:GITHUB_WORKSPACE/tools/sign-windows.ps1", [ref]$tokens, [ref]$errors) | Out-Null
           if ($errors.Count -gt 0) { throw "Invalid Windows signing helper PowerShell syntax." }
+      - name: Apply official Veylor logo to Windows exe and installer
+        run: python tool/prepare_brand_icon.py
       - run: flutter build windows --release
       - name: Compile external update runner and release marker
         shell: pwsh
         run: |
           $release = "build/windows/x64/runner/Release"
-          "0.3.7" | Set-Content -Path "$release/veylor-version.txt" -NoNewline
+          "0.3.8" | Set-Content -Path "$release/veylor-version.txt" -NoNewline
           dart compile exe tool/windows_update_runner.dart -o "$release/veylor-updater.exe"
           if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$release/veylor-updater.exe")) {
             throw "Windows rollback runner compilation failed."
@@ -73,7 +75,7 @@ jobs:
           }
       - name: Pack portable Windows bundle
         shell: pwsh
-        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Veylor-v0.3.7-Windows-x64.zip -Force
+        run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath Veylor-v0.3.8-Windows-x64.zip -Force
       - name: Install Inno Setup compiler
         shell: pwsh
         run: choco install innosetup --yes --no-progress
@@ -89,7 +91,7 @@ jobs:
           if (-not (Test-Path "build/windows/x64/runner/Release/veylor.exe")) { throw "Veylor exe not found in Windows build" }
           & $compiler "windows-installer.iss"
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup compilation failed ($LASTEXITCODE)" }
-          if (-not (Test-Path "dist/Veylor-v0.3.7-Setup-Windows-x64.exe")) { throw "Installer not generated" }
+          if (-not (Test-Path "dist/Veylor-v0.3.8-Setup-Windows-x64.exe")) { throw "Installer not generated" }
       - name: Authenticode sign Windows installer if app is signed
         if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.win-app-sign.outputs.signed == 'true'
         shell: pwsh
@@ -97,13 +99,13 @@ jobs:
           VEYLOR_WINDOWS_PFX_BASE64: ${{ secrets.VEYLOR_WINDOWS_PFX_BASE64 }}
           VEYLOR_WINDOWS_PFX_PASSWORD: ${{ secrets.VEYLOR_WINDOWS_PFX_PASSWORD }}
         run: |
-          & "$env:GITHUB_WORKSPACE/tools/sign-windows.ps1" -FilePath "dist/Veylor-v0.3.7-Setup-Windows-x64.exe"
+          & "$env:GITHUB_WORKSPACE/tools/sign-windows.ps1" -FilePath "dist/Veylor-v0.3.8-Setup-Windows-x64.exe"
           if ($LASTEXITCODE -ne 0) { throw "Windows installer signing failed" }
       - name: Smoke-test unsigned or signed Windows installer (install and uninstall)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $setup = (Resolve-Path "dist/Veylor-v0.3.7-Setup-Windows-x64.exe").Path
+          $setup = (Resolve-Path "dist/Veylor-v0.3.8-Setup-Windows-x64.exe").Path
           $compiled = (Resolve-Path "build/windows/x64/runner/Release/veylor.exe").Path
           $installRoot = Join-Path $env:RUNNER_TEMP 'Veylor-Installer-Smoke'
           $installLog = Join-Path $env:RUNNER_TEMP 'veylor-installer-smoke.log'
@@ -113,7 +115,7 @@ jobs:
           $installed = Join-Path $installRoot 'veylor.exe'
           if (-not (Test-Path $installed)) { throw 'Installed application EXE missing.' }
           if (-not (Test-Path (Join-Path $installRoot 'veylor-updater.exe'))) { throw 'Rollback helper missing.' }
-          if ((Get-Content (Join-Path $installRoot 'veylor-version.txt') -Raw).Trim() -ne '0.3.7') { throw 'Release marker mismatch.' }
+          if ((Get-Content (Join-Path $installRoot 'veylor-version.txt') -Raw).Trim() -ne '0.3.8') { throw 'Release marker mismatch.' }
           $expected = (Get-FileHash $compiled -Algorithm SHA256).Hash
           $actual = (Get-FileHash $installed -Algorithm SHA256).Hash
           if ($expected -ne $actual) { throw 'Installed EXE hash differs from release build.' }
@@ -126,7 +128,7 @@ jobs:
           $digest = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLowerInvariant()
           $wrongDigest = '0' * 64
           $PSNativeCommandUseErrorActionPreference = $false # expected nonzero exit codes test rollback
-          & $updater '--installer' $setup '--sha256' $wrongDigest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.7' '--no-relaunch' 'true'
+          & $updater '--installer' $setup '--sha256' $wrongDigest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.8' '--no-relaunch' 'true'
           if ($LASTEXITCODE -ne 93) { throw 'Bad SHA-256 was not rejected.' }
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Digest rejection modified installed app.' }
           & $updater '--installer' $setup '--sha256' $digest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '9.9.9' '--no-relaunch' 'true'
@@ -134,10 +136,10 @@ jobs:
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Rollback failed to restore installed app.' }
           # Simulate a successful install followed by a crash BEFORE startup receipt.
           # The complete previous directory must be restored in this case.
-          & $updater '--installer' $setup '--sha256' $digest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.7' '--no-relaunch' 'true' '--test-startup-fail' 'true'
+          & $updater '--installer' $setup '--sha256' $digest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.8' '--no-relaunch' 'true' '--test-startup-fail' 'true'
           if ($LASTEXITCODE -ne 95) { throw 'Startup failure did not trigger automatic rollback.' }
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Startup rollback lost previous application.' }
-          & $updater '--installer' $setup '--sha256' $digest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.7' '--no-relaunch' 'true'
+          & $updater '--installer' $setup '--sha256' $digest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.8' '--no-relaunch' 'true'
           if ($LASTEXITCODE -ne 0) { throw 'Valid staged update did not install.' }
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Updated executable hash mismatch.' }
           $uninstaller = Join-Path $installRoot 'unins000.exe'
@@ -153,20 +155,20 @@ jobs:
           else { "unsigned" | Set-Content -Path windows-signing-status.txt }
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.7-Windows-signature-status
+          name: Veylor-v0.3.8-Windows-signature-status
           path: apps/client/windows-signing-status.txt
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.7-Setup-Windows-x64
-          path: apps/client/dist/Veylor-v0.3.7-Setup-Windows-x64.exe
+          name: Veylor-v0.3.8-Setup-Windows-x64
+          path: apps/client/dist/Veylor-v0.3.8-Setup-Windows-x64.exe
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.7-Windows-x64
-          path: apps/client/Veylor-v0.3.7-Windows-x64.zip
+          name: Veylor-v0.3.8-Windows-x64
+          path: apps/client/Veylor-v0.3.8-Windows-x64.zip
           if-no-files-found: error
           retention-days: 7
   linux:
@@ -189,11 +191,11 @@ jobs:
       - run: flutter pub get
       - run: flutter build linux --release
       - name: Pack Linux bundle
-        run: tar -C build/linux/x64/release/bundle -czf Veylor-v0.3.7-Linux-x64.tar.gz .
+        run: tar -C build/linux/x64/release/bundle -czf Veylor-v0.3.8-Linux-x64.tar.gz .
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.7-Linux-x64
-          path: apps/client/Veylor-v0.3.7-Linux-x64.tar.gz
+          name: Veylor-v0.3.8-Linux-x64
+          path: apps/client/Veylor-v0.3.8-Linux-x64.tar.gz
           if-no-files-found: error
           retention-days: 7
   android:
@@ -214,11 +216,13 @@ jobs:
           channel: stable
           cache: true
       - run: flutter create --project-name veylor --platforms=android .
+      - name: Apply Veylor launcher icon on Android
+        run: python3 tool/prepare_brand_android.py
       - run: flutter pub get
       - run: flutter build apk --debug
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.3.7-Android-debug
+          name: Veylor-v0.3.8-Android-debug
           path: apps/client/build/app/outputs/flutter-apk/app-debug.apk
           if-no-files-found: error
           retention-days: 7
@@ -304,14 +308,14 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: steps.android-sign.outputs.signed == 'true'
         with:
-          name: Veylor-v0.3.7-Android-release-APK
+          name: Veylor-v0.3.8-Android-release-APK
           path: apps/client/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
         if: steps.android-sign.outputs.signed == 'true'
         with:
-          name: Veylor-v0.3.7-Android-Play-AAB
+          name: Veylor-v0.3.8-Android-Play-AAB
           path: apps/client/build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 14
