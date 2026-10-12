@@ -1,62 +1,72 @@
-# Veylor V0.2
+# Veylor
 
-Aplicativo de comunicação em desenvolvimento para Windows, Linux, Android e iOS.
+Veylor é um aplicativo **beta** de comunicação por texto para Windows, Android e Linux, com cliente Flutter e backend Node.js/PostgreSQL. O objetivo é oferecer servidores, canais de texto e conversas privadas com sincronização em tempo real.
 
-## Incluído na V0.2
-- DMs por nome de usuário com consultas autorizadas no backend.
-- Notificações em tempo real autenticadas por WebSocket. REST permanece a fonte de verdade e há consulta de segurança a cada 30 s.
-- Criação de canais de texto e voz por proprietário/moderador.
-- Gestão básica de membros: proprietário concede/remove moderador; moderadores podem remover membros comuns.
-- Sessão salva em armazenamento seguro nativo pelo pacote flutter_secure_storage.
-- Migração de schema SQLite não destrutiva a partir da V0.1.
+> **Estado atual:** V0.3.4 em desenvolvimento. O `main` pode estar atrás da branch de testes. Não trate builds de depuração como versão estável.
 
-## Não implementado
-- Streaming, voz e vídeo ainda não operacionais; LiveKit aguarda o cliente da V0.3.
-- WebSocket distribui sinais de atualização, **não** payload de mensagens; dados só pela API autorizada.
-- Não há presença persistente, typing indicators, moderação avançada, bloqueios de usuário ou uploads.
-- Testes de carga, TLS, hardening, publicação e builds assinados ainda não foram concluídos.
+## Recursos atuais
 
-## API
-Node 22.13+:
+- Cadastro, login, servidores, convites, cargos básicos e canais.
+- Mensagens em canais e conversas privadas, com autorização pelo backend.
+- WebSocket para avisos de atualização, reconexão progressiva e recuperação de mensagens via REST.
+- Reenvio de mensagens com identificador de idempotência (evita duplicatas em timeout).
+- Armazenamento de sessão local em Secure Storage do Flutter.
+- Verificador de novas versões no Windows e Android: abre a página oficial do GitHub, sem executar downloads automaticamente.
+- Servidor compatível com PostgreSQL ou SQLite local para desenvolvimento.
+
+**Ainda não oferece chamadas de voz, vídeo, compartilhamento de tela nem atualização silenciosa.** Canais de voz podem existir na interface, mas a conexão de mídia não está concluída.
+
+## Downloads beta
+
+Depois de uma execução aprovada, procure os artefatos em **[GitHub Actions](https://github.com/night02/discord2/actions)**. O instalador Windows (`Setup-Windows-x64.exe`) e os pacotes portáteis são gerados separadamente. Os arquivos de Actions expiram após o prazo de retenção.
+
+As **[GitHub Releases](https://github.com/night02/discord2/releases)** são o canal planejado para downloads duradouros. Uma prerelease só será anunciada após **testes completos e publicação manual**. Não considere uma tag ou APK disponível até que os arquivos realmente existam.
+
+- **Windows:** instalar usando o Setup.exe ou extrair o pacote portátil completo (inclui DLLs).
+- **Android:** APK debug exclusivamente para testes; assinatura permanente ainda pendente. Não há versão Play Store.
+- **Linux:** extrair todo o tarball portátil.
+- **iOS:** código Flutter possível, mas sem IPA compilado/assinado neste repositório.
+
+O instalador Windows ainda não está assinado com certificado Authenticode. Não desative as proteções do sistema para instalar.
+
+## Desenvolver localmente
+
+Requisitos: Node.js 22 ou superior, Flutter stable, e as ferramentas nativas do sistema.
+
+Backend SQLite de desenvolvimento:
+
 ```bash
 cd apps/server
 npm install
 npm start
 ```
 
-## Cliente
-Flutter SDK mais ferramentas de cada destino:
+Cliente Flutter:
+
 ```bash
 cd apps/client
-flutter create --project-name veylor --platforms=windows,linux,android,ios .
+flutter create --project-name veylor --platforms=windows,android,linux .
 flutter pub get
+flutter test
 flutter run -d windows --dart-define=VEYLOR_API_URL=http://127.0.0.1:8080
 ```
-No Linux use `-d linux`. No Android/iOS configure endereço HTTPS acessível pelo dispositivo; o host local do seu PC não corresponde a 127.0.0.1 do celular. Windows requer Visual Studio Build Tools; Linux com flutter_secure_storage pode exigir pacote libsecret-1-dev e dependências de desktop; iOS requer Mac/Xcode, assinatura e permissões nativas.
 
-**Segurança:** backend local para desenvolvimento. Sessões são armazenadas em Secure Storage no cliente, não em texto simples. Para disponibilização pública ainda faltam infraestrutura HTTPS/WSS, rate limit distribuído, controle de abuso e monitoramento. Mantenha LIVEKIT_API_SECRET somente no servidor.
+Para o Android e outros computadores use uma URL HTTPS do backend acessível pela rede. Não publique credenciais, tokens, chaves Android, URLs PostgreSQL com senha nem arquivos `.env`.
 
-Veja [arquitetura](docs/ARCHITECTURE.md).
+## Integração e publicação
 
-## V0.2 Preview - teste multiplataforma
+- PRs permanecem em rascunho até concluir testes Flutter, API SQLite/PostgreSQL, verificação HTTPS da API hospedada e os builds Windows/Linux/Android.
+- O workflow de **GitHub Releases** publica apenas **manualmente**, a partir do **commit testado no branch `main`**. O branch `main` gera seus próprios builds e checagens para garantir o mesmo SHA.
+- A aplicação verifica apenas links HTTPS de `github.com/night02/discord2/actions/runs/...` ou `github.com/night02/discord2/releases/tag/vX.Y.Z-beta`; tags devem corresponder à versão anunciada.
+- Somente após conferir os artefatos e a aplicação em Windows e Android reais, atualizar os manifestos da API no Render.
+- O backend hospedado e o banco PostgreSQL são ambientes separados do ciclo de CI. Nenhum merge de código, por si só, deve apagar ou migrar dados do servidor.
 
-Os três pacotes são gerados pelo workflow [Veylor V0.2 preview builds](https://github.com/Night0231-creator/discord2/actions) na branch `feature/veylor-v0.2`.
+## Documentação
 
-- Windows x64: `Veylor-v0.2-Windows-x64.zip` com executável **e DLLs** (extraia o ZIP inteiro).
-- Linux x64: `Veylor-v0.2-Linux-x64.tar.gz` contendo o bundle portátil.
-- Android: `Veylor-v0.2-Android-debug` com `app-debug.apk`. Somente para testes, não Play Store.
+- [Arquitetura](docs/ARCHITECTURE.md)
+- [Estratégia de releases V0.3.4](docs/V0.3.4_RELEASES.md)
+- [Estabilidade V0.3.3](docs/V0.3.3_STABILITY.md)
+- [Instaladores e assinatura Android](docs/INSTALLERS.md)
+- [PostgreSQL no Render](docs/RENDER_STAGING.md)
 
-Depois de um workflow bem-sucedido, use **Artifacts** na página da execução (conta GitHub com acesso ao repositório privado). Prazo de retenção de 7 dias. Builds não incluem servidor de mídia nem um backend hospedado.
-
-Para conversar entre dispositivos: execute a API Node num host compartilhado e coloque-a atrás de HTTPS, entre no app > **Servidor** e digite sua URL `https://...` antes de fazer login. O aplicativo não envia tokens por HTTP remoto; somente `http://127.0.0.1` e `localhost` são permitidos para desenvolvimento. 
-
-Se precisar testar via HTTP na LAN, a aplicação deve ser recompilada explicitamente com `--dart-define=ALLOW_INSECURE_DEV_API=true`, e a plataforma pode exigir configuração de tráfego não criptografado. Não utilize isso em produção.
-
-O iOS exige Mac/Xcode e assinatura e **não** faz parte destes 3 pacotes.
-
-## Atualizações de aplicativo Android (V0.2.1 beta)
-
-O Veylor V0.2.1+3 verifica automaticamente a versão publicada quando inicia e permite verificar manualmente no login e em **Verificar atualização** na barra lateral.
-A API fornece apenas metadados em `GET /api/updates/android`. O manifesto em `apps/server/mobile-release.json` aponta inicialmente para o último APK **testado** da V0.2.0+2. Não aponte o manifesto para novas versões antes de os builds passarem pelos testes.
-
-**Limitações reais:** o APK está em um repositório privado do GitHub. É necessário acesso ao repositório para baixar os artefatos e a instalação é manual via sistema Android. Chaves de assinatura de builds debug podem mudar a cada execução do CI, impedindo instalar por cima da versão antiga. Para distribuição estável e upgrades preservando sessão, precisamos criar uma assinatura de release permanente e segura, armazenada como segredo de CI (nunca em GitHub público). A versão atual **não baixa e instala automaticamente** o APK.
+**Importante:** o banco PostgreSQL gratuito do ambiente de homologação foi criado com vencimento previsto para **11/11/2026**. Faça migração/backup para armazenamento durável antes de manter usuários reais nessa base.
