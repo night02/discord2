@@ -1,14 +1,26 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'update_service.dart';
+import 'update_diagnostics.dart';
 
 /// Only PUBLIC prereleases of this exact project are eligible for in-app download.
 /// SHA-256 detects corruption; GitHub repository access controls still determine who
 /// is allowed to publish a trusted package. Unsigned EXEs are never called signed.
 const _repo = 'night02/discord2';
 const maxInstallerBytes = 450 * 1024 * 1024;
+
+class IncompleteDownload implements Exception {
+  const IncompleteDownload();
+}
+
+bool retryableDownloadError(Object error) =>
+    error is SocketException || error is TimeoutException ||
+    error is IncompleteDownload ||
+    (error is HttpException &&
+        RegExp(r'GitHub HTTP (429|500|502|503|504)').hasMatch(error.message));
 
 class WindowsUpdatePackage {
   WindowsUpdatePackage(this.directory, this.installer, this.sha256, this.version);
@@ -105,13 +117,20 @@ bool allowedVeylorAssetRedirect(Uri origin, Uri next) {
 class VeylorWindowsDownloader {
   VeylorWindowsDownloader({HttpClient? client}) : _client = client ?? HttpClient() {
     _client.connectionTimeout = const Duration(seconds: 15);
-    _client.userAgent = 'Veylor-Windows-Update/0.3.6';
+    _client.userAgent = 'Veylor-Windows-Update/0.3.7';
   }
   final HttpClient _client;
+  bool _cancelled = false;
+
+  void cancel() {
+    _cancelled = true;
+    _client.close(force: true);
+  }
 
   void close() => _client.close(force: true);
 
   Future<HttpClientResponse> _open(Uri uri, {bool asset = false}) async {
+    if (_cancelled) throw const FormatException('Download cancelado.');
     var current = uri;
     for (var redirect = 0; redirect <= 4; redirect++) {
       final request = await _client.getUrl(current);
@@ -144,7 +163,7 @@ class VeylorWindowsDownloader {
   Future<List<int>> _smallDownload(Uri uri, int maxBytes, {bool asset = false}) async {
     final response = await _open(uri, asset: asset);
     final builder = BytesBuilder(copy: false);
-    await for (final chunk in response) {
+    await for (final chunk in response.timeout(const Duration(seconds: 30))) {
       if (builder.length + chunk.length > maxBytes) {
         throw const FormatException('Resposta excede o limite.');
       }
@@ -155,11 +174,13 @@ class VeylorWindowsDownloader {
 
   Future<WindowsUpdatePackage> prepare(WindowsUpdate update,
       {void Function(int received, int total)? onProgress,
+       void Function(int attempt)? onRetry,
        bool Function()? cancelled}) async {
     if (!isTrustedVeylorDownload(update.downloadUrl, releaseVersion: update.version) ||
         !update.downloadUrl.path.contains('/releases/tag/')) {
       throw const FormatException('Download interno disponível apenas para Releases oficiais.');
     }
+    await UpdateDiagnostics.add('download_start');
     final tag = update.downloadUrl.pathSegments.last;
     final infoUrl = Uri.https('api.github.com', '/repos/$_repo/releases/tags/$tag');
     final metadata = jsonDecode(utf8.decode(await _smallDownload(infoUrl, 256 * 1024)));
@@ -173,31 +194,51 @@ class VeylorWindowsDownloader {
     final stage = await Directory.systemTemp.createTemp('veylor-update-');
     final pending = File('${stage.path}/${release.installer.name}.partial');
     try {
-      final response = await _open(release.installer.url, asset: true);
-      final sink = pending.openWrite();
-      var received = 0;
-      try {
-        await for (final chunk in response) {
-          if (cancelled?.call() == true) throw const FormatException('Download cancelado.');
-          received += chunk.length;
-          if (received > release.installer.size) {
-            throw const FormatException('Arquivo maior que o esperado.');
+      for (var attempt = 1; attempt <= 3; attempt++) {
+        try {
+          if (_cancelled || cancelled?.call() == true) {
+            throw const FormatException('Download cancelado.');
           }
-          sink.add(chunk);
-          onProgress?.call(received, release.installer.size);
+          final response = await _open(release.installer.url, asset: true);
+          final sink = pending.openWrite();
+          var received = 0;
+          try {
+            await for (final chunk in response.timeout(const Duration(seconds: 30))) {
+              if (_cancelled || cancelled?.call() == true) {
+                throw const FormatException('Download cancelado.');
+              }
+              received += chunk.length;
+              if (received > release.installer.size) {
+                throw const FormatException('Arquivo maior que o esperado.');
+              }
+              sink.add(chunk);
+              onProgress?.call(received, release.installer.size);
+            }
+            await sink.flush();
+          } finally {
+            await sink.close();
+          }
+          if (received != release.installer.size) throw const IncompleteDownload();
+          await verifyInstallerDigest(pending, expected);
+          final result = File('${stage.path}/${release.installer.name}');
+          await pending.rename(result.path);
+          await UpdateDiagnostics.add('package_verified');
+          await UpdateDiagnostics.add('download_done');
+          return WindowsUpdatePackage(stage, result, expected, update.version);
+        } catch (error) {
+          if (await pending.exists()) await pending.delete();
+          if (_cancelled || cancelled?.call() == true) rethrow;
+          if (attempt == 3 || !retryableDownloadError(error)) rethrow;
+          await UpdateDiagnostics.add('download_retry');
+          onRetry?.call(attempt);
+          onProgress?.call(0, release.installer.size);
+          await Future<void>.delayed(Duration(seconds: attempt));
         }
-        await sink.flush();
-      } finally {
-        await sink.close();
       }
-      if (received != release.installer.size) {
-        throw const FormatException('Download incompleto.');
-      }
-      await verifyInstallerDigest(pending, expected);
-      final result = File('${stage.path}/${release.installer.name}');
-      await pending.rename(result.path);
-      return WindowsUpdatePackage(stage, result, expected, update.version);
+      throw StateError('Tentativas excedidas.');
     } catch (_) {
+      await UpdateDiagnostics.add(_cancelled || cancelled?.call() == true
+          ? 'download_cancel' : 'download_failed');
       if (await stage.exists()) await stage.delete(recursive: true);
       rethrow;
     }
