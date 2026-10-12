@@ -107,7 +107,7 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
     }
     final source=await showDialog<dynamic>(
       context:context,builder:(_)=>lk.ScreenSelectDialog());
-    if(source==null)return;
+    if(source==null || !mounted)return;
     final permitted=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
       title:const Text('Iniciar transmissão de tela?'),
       content:const Text('Outras pessoas neste canal poderão ver a janela ou tela escolhida. '
@@ -139,10 +139,15 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
     if(mounted)Navigator.of(context).pop();
   }
 
+  Future<void> _cleanup() async {
+    try { await room.disconnect(); } catch (_) {}
+    try { await room.dispose(); } catch (_) {}
+  }
+
   @override
   void dispose() {
     room.removeListener(_onRoomUpdate);
-    unawaited(room.disconnect().then((_)=>room.dispose()).catchError((Object _) {}));
+    unawaited(_cleanup());
     super.dispose();
   }
 
