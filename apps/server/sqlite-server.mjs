@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { createV02 } from './v02.mjs';
+import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
+import {sqliteDiscordAdapter} from './discord-sqlite.mjs';
 
 // Public update metadata points only to already-built, manually verified beta artifacts.
 const androidRelease = JSON.parse(readFileSync(new URL('./mobile-release.json', import.meta.url),'utf8'));
@@ -18,6 +20,8 @@ const db = new DatabaseSync(databaseFile);
 db.exec(`PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS discord_accounts(discord_id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS discord_oauth_attempts(id TEXT PRIMARY KEY,state_hash TEXT NOT NULL UNIQUE,proof_hash TEXT NOT NULL,status TEXT NOT NULL,user_id TEXT REFERENCES users(id),expires_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS servers (id TEXT PRIMARY KEY, name TEXT NOT NULL, owner_id TEXT NOT NULL REFERENCES users(id), created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS members (server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, role TEXT NOT NULL DEFAULT 'member', PRIMARY KEY(server_id,user_id));
 CREATE TABLE IF NOT EXISTS channels (id TEXT PRIMARY KEY, server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE, name TEXT NOT NULL, type TEXT NOT NULL CHECK(type IN ('text','voice')));
@@ -120,6 +124,16 @@ const mediaToken = (user, room) => {
 };
 
 const v02 = createV02({ db, sessionUser, membership, limit, fail, json, requestBody, now });
+const discordAuth=createDiscordOAuth(sqliteDiscordAdapter(db,{now,newServer,issueToken}));
+const oauthCallbackPage=(res,ok)=>{
+  res.writeHead(ok?200:400,{
+    'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store',
+    'Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'",
+    'Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff',
+    'X-Frame-Options':'DENY'
+  });
+  res.end(safeOAuthHtml(ok?'ok':'error'));
+};
 
 export const app = http.createServer(async (req,res) => {
   try {
@@ -129,6 +143,19 @@ export const app = http.createServer(async (req,res) => {
     if (method==='GET' && pathname==='/health') return json(res,200,{status:'ok',app:'Veylor'});
     if (method==='GET' && pathname==='/api/updates/android') return json(res,200,androidRelease);
     if (method==='GET' && pathname==='/api/updates/windows') return json(res,200,windowsRelease);
+    if (method==='POST' && pathname==='/api/auth/discord/start') {
+      limit(req,'discord-start',12);
+      return json(res,200,await discordAuth.start());
+    }
+    if (method==='POST' && pathname==='/api/auth/discord/poll') {
+      limit(req,'discord-poll',40);
+      return json(res,200,await discordAuth.poll(await requestBody(req)));
+    }
+    if (method==='GET' && pathname==='/api/auth/discord/callback') {
+      let approved=false;
+      try{await discordAuth.callback(uri);approved=true;}catch(_){}
+      return oauthCallbackPage(res,approved);
+    }
     if (method==='POST' && pathname==='/api/register') {
       limit(req,'auth',10);
       const {username,password} = await requestBody(req);
