@@ -132,6 +132,11 @@ jobs:
           & $updater '--installer' $setup '--sha256' $digest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '9.9.9' '--no-relaunch' 'true'
           if ($LASTEXITCODE -ne 95) { throw 'Failed postcheck did not rollback.' }
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Rollback failed to restore installed app.' }
+          # Simulate a successful install followed by a crash BEFORE startup receipt.
+          # The complete previous directory must be restored in this case.
+          & $updater '--installer' $setup '--sha256' $digest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.7' '--no-relaunch' 'true' '--test-startup-fail' 'true'
+          if ($LASTEXITCODE -ne 95) { throw 'Startup failure did not trigger automatic rollback.' }
+          if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Startup rollback lost previous application.' }
           & $updater '--installer' $setup '--sha256' $digest '--install-dir' $installRoot '--parent-pid' '999999' '--target-version' '0.3.7' '--no-relaunch' 'true'
           if ($LASTEXITCODE -ne 0) { throw 'Valid staged update did not install.' }
           if ((Get-FileHash $installed -Algorithm SHA256).Hash -ne $expected) { throw 'Updated executable hash mismatch.' }
