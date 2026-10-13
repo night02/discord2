@@ -110,6 +110,9 @@ void main() {
       await tester.pumpAndSettle();
       final composer = find.byKey(const ValueKey('message-composer'));
       await tester.enterText(composer, 'Mesmo texto');
+      await tester.pump();
+      final sendButton = find.byKey(const ValueKey('send-message'));
+      expect(tester.widget<IconButton>(sendButton).onPressed, isNotNull);
       final response = Completer<Json>();
       f.api.handler = (method, route, body) async {
         if (method == 'POST' && route == '/api/dms/thread-a/messages') {
@@ -117,8 +120,14 @@ void main() {
         }
         return f.api.response(method, route, body);
       };
-      await tester.tap(find.byKey(const ValueKey('send-message')));
+      await tester.tap(sendButton);
       await tester.pump();
+      expect(f.app.sending, isTrue);
+      expect(
+        f.api.calls.where((call) => call.method == 'POST' &&
+            call.route == '/api/dms/thread-a/messages'),
+        hasLength(1),
+      );
       await tester.tap(find.byKey(const ValueKey('dm-thread-b')));
       await tester.pumpAndSettle();
       await tester.enterText(composer, 'Mesmo texto');
