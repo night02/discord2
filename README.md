@@ -2,7 +2,7 @@
 
 Veylor é um aplicativo **beta** de comunicação por texto para Windows, Android e Linux, com cliente Flutter e backend Node.js/PostgreSQL. O objetivo é oferecer servidores, canais de texto e conversas privadas com sincronização em tempo real.
 
-> **Estado atual:** V0.3.7 beta publicada; V0.3.8 em testes com nova identidade visual e interface desktop. Builds de testes não são releases estáveis.
+> **Estado atual:** V0.3.8 beta publicada; V0.4.0 em testes com sala de voz LiveKit. Um servidor LiveKit com credenciais é necessário para mídia real.
 
 ## Recursos atuais
 
@@ -18,7 +18,7 @@ Veylor é um aplicativo **beta** de comunicação por texto para Windows, Androi
 - Logs redigidos de atualização em `%LOCALAPPDATA%\\Veylor\\Logs`. A versão exibida na interface agora é consultada do pacote instalado.
 - Servidor compatível com PostgreSQL ou SQLite local para desenvolvimento.
 
-**Ainda não oferece chamadas de voz, vídeo, compartilhamento de tela nem atualização silenciosa.** Canais de voz podem existir na interface, mas a conexão de mídia não está concluída.
+**V0.4.0 (beta em preparação):** permite entrar em salas de voz LiveKit e publicar tela no Windows/macOS, somente se a API tiver LiveKit configurado. Ainda não foram validadas chamadas de ponta a ponta em dois aparelhos. Não oferece gravação nem atualização silenciosa.
 
 ## Downloads beta
 
@@ -60,7 +60,7 @@ Para o Android e outros computadores use uma URL HTTPS do backend acessível pel
 ## Integração e publicação
 
 - PRs permanecem em rascunho até concluir testes Flutter, API SQLite/PostgreSQL, verificação HTTPS da API hospedada e os builds Windows/Linux/Android.
-- O workflow **Veylor preview builds** compila Windows (`.exe` e ZIP), Android (APK debug) e Linux ao atualizar o código do cliente em `main`. **Veylor beta Releases** cria automaticamente uma *prerelease* numerada para cada build bem-sucedido, apenas quando Flutter, API SQLite/PostgreSQL e teste hospedado também passarem no MESMO SHA. Publicações nunca fazem deploy no Render. Os arquivos ficam em [Releases](https://github.com/night02/discord2/releases).
+- **Toda atualização aprovada e integrada em `main` dispara uma nova beta automaticamente**, mesmo que só altere documentação/backend. **Veylor preview builds** compila Windows (`.exe`/ZIP), Android (APK de teste) e Linux, com build number crescente. **Veylor beta Releases** publica uma tag exclusiva quando Flutter, API SQLite/PostgreSQL e todos os builds passarem no MESMO SHA. O teste do Render permanece independente enquanto a infraestrutura estiver adiada. Não fazemos deploy no Render pelo CI. As versões anteriores continuam em [Releases](https://github.com/night02/discord2/releases).
 - A aplicação verifica apenas links HTTPS de `github.com/night02/discord2/actions/runs/...` ou `github.com/night02/discord2/releases/tag/vX.Y.Z-beta`; tags devem corresponder à versão anunciada.
 - Somente após conferir os artefatos e a aplicação em Windows e Android reais, atualizar os manifestos da API no Render.
 - O backend hospedado e o banco PostgreSQL são ambientes separados do ciclo de CI. Nenhum merge de código, por si só, deve apagar ou migrar dados do servidor.
@@ -74,6 +74,8 @@ Para o Android e outros computadores use uma URL HTTPS do backend acessível pel
 - [Atualizador Windows e recuperação V0.3.6](docs/V0.3.6_UPDATER.md)
 - [Watchdog e rollback V0.3.7](docs/V0.3.7_UPDATER.md)
 - [Interface e identidade visual V0.3.8](docs/V0.3.8_INTERFACE.md)
+- [Salas LiveKit e transmissão experimental V0.4.0](docs/V0.4.0_VOICE.md)
+- [Política: publicar cada atualização aprovada](docs/AUTO_BETA_EVERY_UPDATE.md)
 - [PostgreSQL no Render](docs/RENDER_STAGING.md)
 
 **Importante:** o banco PostgreSQL gratuito do ambiente de homologação foi criado com vencimento previsto para **11/11/2026**. Faça migração/backup para armazenamento durável antes de manter usuários reais nessa base.

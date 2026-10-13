@@ -10,6 +10,8 @@ import 'update_service.dart';
 import 'windows_update_download.dart';
 import 'update_health.dart';
 import 'update_diagnostics.dart';
+import 'voice_room.dart';
+import 'discord_login.dart';
 import 'api_endpoint.dart';
 
 List<String> _startupArguments = const [];
@@ -492,6 +494,77 @@ class _HomeState extends State<Home> {
     try {await task();} catch(e) {if(mounted)setState(()=>error=e.toString().replaceFirst('Exception: ',''));}
     finally {if(mounted)setState(()=>busy=false);}
   }
+  Future<void> loginWithDiscord() async {
+    if(busy)return;
+    setState(() {busy=true;error=null;});
+    bool cancelled=false;
+    bool progressVisible=false;
+    try {
+      final start=await api.request('POST','/api/auth/discord/start');
+      final authorization=DiscordLoginRequest.fromJson(start);
+      final opened=await launchUrl(authorization.url,mode:LaunchMode.externalApplication);
+      if(!opened)throw StateError('Não foi possível abrir o navegador para autenticar.');
+      if(!mounted)return;
+      progressVisible=true;
+      final modal=showDialog<void>(
+        context:context,barrierDismissible:false,
+        builder:(ctx)=>PopScope(canPop:false,child:AlertDialog(
+          title:const Text('Entrar com Discord'),
+          content:const Column(mainAxisSize:MainAxisSize.min,children:[
+            CircularProgressIndicator(),
+            SizedBox(height:20),
+            Text('Autorize a Veylor no navegador. Esta janela aguardará a confirmação.'),
+          ]),
+          actions:[TextButton(onPressed:(){
+            cancelled=true;
+            progressVisible=false;
+            Navigator.of(ctx).pop();
+          },child:const Text('Cancelar'))],
+        )));
+      for(var attempt=0;attempt<100&&!cancelled&&mounted;attempt++){
+        await Future<void>.delayed(const Duration(seconds:2));
+        if(cancelled||!mounted)break;
+        final result=await api.request('POST','/api/auth/discord/poll',{
+          'request_id':authorization.requestId,
+          'poll_secret':authorization.pollSecret,
+        });
+        // Cancellation may happen while the network request is in flight.
+        if(cancelled||!mounted)break;
+        if(result['status']!='ready')continue;
+        final token=result['token'],profile=result['user'];
+        if(token is! String||!RegExp(r'^[a-f0-9]{64}$').hasMatch(token)||
+            profile is! Map||profile['username'] is! String){
+          throw const FormatException('Sessão Discord recebida é inválida.');
+        }
+        cancelled=true;
+        if(mounted){
+          Navigator.of(context,rootNavigator:true).pop();
+          progressVisible=false;
+        }
+        await modal;
+        api.token=token;
+        nick=profile['username'] as String;
+        await storage.write(key:'veylor_session',value:token);
+        await loadServers();
+        await loadDms();
+        startRealtime();
+        if(mounted)setState((){});
+        return;
+      }
+      if(!cancelled)throw StateError('Tempo para entrar com Discord esgotado. Tente novamente.');
+      await modal;
+    }catch(e){
+      if(mounted)setState((){
+        error=e is ApiException && e.statusCode==503
+          ?'Login Discord ainda não configurado no servidor.'
+          :'Não foi possível entrar com Discord: $e';
+      });
+    }finally{
+      if(progressVisible&&mounted)Navigator.of(context,rootNavigator:true).pop();
+      if(mounted)setState(()=>busy=false);
+    }
+  }
+
   Future<void> authenticate()=>perform(() async {
     api.baseUrl=validateApiEndpoint(api.baseUrl);
     final data=await api.request('POST',signup?'/api/register':'/api/login',
@@ -612,14 +685,29 @@ class _HomeState extends State<Home> {
     });
   }
   Future<void> voice(Map<String,dynamic> c) async {
-    await perform(() async {
-      await api.request('POST','/api/media/token',{'channel_id':c['id']});
+    if(busy || api.token==null)return;
+    setState(() {busy=true;error=null;});
+    try {
+      final response=await api.request('POST','/api/media/token',{'channel_id':c['id']});
+      final access=MediaAccess.fromJson(response);
       if(!mounted)return;
-      await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(
-        title:const Text('Mídia ainda não ativada'),
-        content:const Text('O backend autorizou o canal. O cliente de voz e vídeo LiveKit será integrado na próxima versão.'),
-        actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Entendi'))]));
-    });
+      // Keep media navigation separate from chat state; never keep the global
+      // busy flag set while a voice call is open.
+      setState(()=>busy=false);
+      _closeMobileNavigation();
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder:(_)=>VeylorVoiceRoom(
+          channelName:c['name']?.toString()??'Voz',
+          access:access,
+        )));
+    }catch(e) {
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content:Text(e.toString().contains('LiveKit ainda não configurado')
+          ?'O servidor de voz ainda precisa ser configurado pelo administrador.'
+          :'Não foi possível entrar no canal de voz: $e')));
+    }finally {
+      if(mounted)setState(()=>busy=false);
+    }
   }
 
   void _scrollToLatest() {

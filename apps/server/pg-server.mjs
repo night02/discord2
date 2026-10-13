@@ -8,6 +8,20 @@ import {
 import {pool,ensureSchema} from './pg-db.mjs';
 import {attachRealtime,disconnectToken,notifyServer,notifyChannel} from './pg-realtime.mjs';
 import {extraRoutes} from './pg-routes.mjs';
+import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
+import {pgDiscordAdapter} from './discord-pg.mjs';
+import {integrationStatus,liveKitReady} from './integration-readiness.mjs';
+
+const discordAuth=createDiscordOAuth(pgDiscordAdapter());
+function oauthCallbackPage(res,ok){
+  res.writeHead(ok?200:400,{
+    'content-type':'text/html; charset=utf-8','cache-control':'no-store',
+    'content-security-policy':"default-src 'none'; style-src 'unsafe-inline'",
+    'referrer-policy':'no-referrer','x-content-type-options':'nosniff',
+    'x-frame-options':'DENY'
+  });
+  res.end(safeOAuthHtml(ok?'ok':'error'));
+}
 
 const release=JSON.parse(readFileSync(new URL('./mobile-release.json',import.meta.url),'utf8'));
 const windowsRelease=JSON.parse(readFileSync(new URL('./windows-release.json',import.meta.url),'utf8'));
@@ -20,6 +34,19 @@ export const app=http.createServer(async(req,res)=>{
     }
     if(m==='GET'&&route==='/api/updates/android')return json(res,200,release);
     if(m==='GET'&&route==='/api/updates/windows')return json(res,200,windowsRelease);
+    if(m==='POST'&&route==='/api/auth/discord/start'){
+      limit(req,'discord-start',12);
+      return json(res,200,await discordAuth.start());
+    }
+    if(m==='POST'&&route==='/api/auth/discord/poll'){
+      limit(req,'discord-poll',40);
+      return json(res,200,await discordAuth.poll(await body(req)));
+    }
+    if(m==='GET'&&route==='/api/auth/discord/callback'){
+      let approved=false;
+      try{await discordAuth.callback(url);approved=true;}catch(_){}
+      return oauthCallbackPage(res,approved);
+    }
     if(m==='POST'&&route==='/api/register'){
       limit(req,'auth',10);
       const {username,password}=await body(req);
@@ -51,6 +78,7 @@ export const app=http.createServer(async(req,res)=>{
 
     const user=await sessionUser(req);
     if(await extraRoutes(req,res,user,route,m,url))return;
+    if(m==='GET'&&route==='/api/integrations/status')return json(res,200,integrationStatus());
     if(m==='GET'&&route==='/api/me')return json(res,200,{user});
     if(m==='POST'&&route==='/api/logout'){
       const t=req.headers.authorization.slice(7);
@@ -129,9 +157,8 @@ export const app=http.createServer(async(req,res)=>{
       if(typeof channel_id!=='string')throw fail(400,'Canal inválido');
       const channel=await channelFor(user.id,channel_id);
       if(channel.type!=='voice')throw fail(400,'Entre em um canal de voz');
-      const {LIVEKIT_URL,LIVEKIT_API_KEY,LIVEKIT_API_SECRET}=process.env;
-      if(!LIVEKIT_URL||!LIVEKIT_API_KEY||!LIVEKIT_API_SECRET||!LIVEKIT_URL.startsWith('wss://'))
-        throw fail(503,'LiveKit ainda não configurado no servidor');
+      const {LIVEKIT_URL}=process.env;
+      if(!liveKitReady())throw fail(503,'LiveKit ainda não configurado no servidor');
       return json(res,200,{url:LIVEKIT_URL,token:mediaToken(user,'veylor-'+channel.id)});
     }
     throw fail(404,'Rota não encontrada');

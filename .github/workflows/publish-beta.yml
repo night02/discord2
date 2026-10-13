@@ -50,14 +50,14 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
-      - name: Verify main commit, build identity, version and unique release tag
+      - name: Verify main lineage, build identity, version and unique release tag
         id: metadata
         shell: bash
         run: |
           set -euo pipefail
-          current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
-          if [[ "$HEAD_SHA" != "$current_main" ]]; then
-            echo "::error::Build commit is not the current main branch; refusing to publish stale code."
+          ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$HEAD_SHA...main" --jq '.status')
+          if [[ "$ancestry" != "ahead" && "$ancestry" != "identical" ]]; then
+            echo "::error::Build commit must belong to main history."
             exit 1
           fi
           details=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json headBranch,headSha,conclusion,workflowName,event)
@@ -81,19 +81,21 @@ jobs:
             echo "exists=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Require Flutter, API and hosted smoke tests on this exact main commit
+      - name: Require Flutter and local API+PostgreSQL tests on this exact main commit
         if: steps.metadata.outputs.exists != 'true'
         shell: bash
         run: |
           set -euo pipefail
           for attempt in $(seq 1 70); do
-            current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
-            if [[ "$current_main" != "$HEAD_SHA" ]]; then
-              echo "::error::Main advanced while checking tests. Do not publish stale packages."
+            ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$HEAD_SHA...main" --jq '.status')
+            if [[ "$ancestry" != "ahead" && "$ancestry" != "identical" ]]; then
+              echo "::error::Commit no longer belongs to main history."
               exit 1
             fi
             approved=0
-            for workflow in "API tests" "Flutter analyze and tests" "Veylor hosted Postgres health"; do
+            # Host-staging health is separately monitored: user deferred Render
+            # setup, and an external environment must never gate offline builds.
+            for workflow in "API tests" "Flutter analyze and tests"; do
               runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" \
                 --branch main --commit "$HEAD_SHA" --event push --limit 30 \
                 --json headSha,headBranch,conclusion)
@@ -104,8 +106,8 @@ jobs:
                 echo "Waiting for passing workflow: $workflow"
               fi
             done
-            if [[ "$approved" == "3" ]]; then
-              echo "All required workflow suites passed on the same SHA."
+            if [[ "$approved" == "2" ]]; then
+              echo "Flutter and API (SQLite+PostgreSQL) tests passed on the same SHA."
               exit 0
             fi
             sleep 15
@@ -183,9 +185,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
-          if [[ "$HEAD_SHA" != "$current_main" ]]; then
-            echo "::error::Main advanced since verification, refusing to release old commit."
+          ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$HEAD_SHA...main" --jq '.status')
+          if [[ "$ancestry" != "ahead" && "$ancestry" != "identical" ]]; then
+            echo "::error::Commit is no longer reachable from main; refusing release."
             exit 1
           fi
           if [[ "${ANDROID_SIGNED:-false}" == "true" ]]; then ANDROID_STATUS="Permanent-key APK and Play upload AAB available (verified)"; else ANDROID_STATUS="Not configured (debug only)"; fi
@@ -202,7 +204,9 @@ jobs:
           - **Android publisher signing:** $ANDROID_STATUS. Play Console uses the AAB when configured.
           - Check \`SHA256SUMS.txt\` to verify the downloaded files.
           - **Windows Authenticode:** $WINDOWS_STATUS.
+          - Each approved commit to main produces its own immutable beta tag/build.
           - Installation is manual. No unattended updates or backend deployments.
+          - This beta does not certify that Discord/LiveKit services are deployed; end-to-end device tests remain necessary.
           - Build source: https://github.com/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN
           EOF
           gh release create "$RELEASE_TAG" release-out/* \
