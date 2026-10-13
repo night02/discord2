@@ -34,6 +34,8 @@ jobs:
       - name: Apply camera and microphone manifest permissions
         run: python3 tool/prepare_voice_android.py
       - run: flutter pub get
+      - name: Ensure Android API 36 compatibility for LiveKit AI noise filter
+        run: python3 tool/prepare_noise_android.py
       - name: Require GitHub Actions signing secrets
         shell: bash
         run: |
