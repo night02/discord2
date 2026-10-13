@@ -1,11 +1,9 @@
 name: Veylor preview builds
 on:
+  # Every new commit to main is a distinct update candidate, even when
+  # changes only touch backend or release documentation.
   push:
     branches: [main]
-    paths:
-      - "apps/client/**"
-      - ".github/workflows/preview-builds.yml"
-      - ".github/workflows/publish-beta.yml"
   pull_request:
     paths:
       - "apps/client/**"
@@ -221,6 +219,8 @@ jobs:
       - name: Grant only foreground Android voice permissions
         run: python3 tool/prepare_voice_android.py
       - run: flutter pub get
+      - name: Ensure Android API 36 compatibility for LiveKit AI noise filter
+        run: python3 tool/prepare_noise_android.py
       - run: flutter build apk --debug
       - uses: actions/upload-artifact@v4
         with:
