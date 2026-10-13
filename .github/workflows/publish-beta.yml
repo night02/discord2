@@ -95,7 +95,7 @@ jobs:
             approved=0
             # Host-staging health is separately monitored: user deferred Render
             # setup, and an external environment must never gate offline builds.
-            for workflow in "API tests" "Flutter analyze and tests"; do
+            for workflow in "API tests" "Flutter analyze and tests" "Media SFU loopback"; do
               runs=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" \
                 --branch main --commit "$HEAD_SHA" --event push --limit 30 \
                 --json headSha,headBranch,conclusion)
@@ -106,8 +106,8 @@ jobs:
                 echo "Waiting for passing workflow: $workflow"
               fi
             done
-            if [[ "$approved" == "2" ]]; then
-              echo "Flutter and API (SQLite+PostgreSQL) tests passed on the same SHA."
+            if [[ "$approved" == "3" ]]; then
+              echo "Flutter, API (SQLite+PostgreSQL) and real SFU tests passed on the same SHA."
               exit 0
             fi
             sleep 15

@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { randomBytes, createHash, createHmac, scryptSync, timingSafeEqual, randomUUID } from 'node:crypto';
+import { randomBytes, createHash, scryptSync, timingSafeEqual, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import path from 'node:path';
@@ -8,8 +8,9 @@ import { readFileSync } from 'node:fs';
 import { createV02 } from './v02.mjs';
 import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
 import {sqliteDiscordAdapter} from './discord-sqlite.mjs';
-import {integrationStatus,liveKitReady} from './integration-readiness.mjs';
+import {integrationStatus} from './integration-readiness.mjs';
 import {createReleaseMetadata} from './release-metadata.mjs';
+import {issueMediaAccess} from './media-access.mjs';
 
 // Public update metadata points only to already-built, manually verified beta artifacts.
 const androidRelease = JSON.parse(readFileSync(new URL('./mobile-release.json', import.meta.url),'utf8'));
@@ -115,15 +116,6 @@ const issueToken = userId => {
   const token = randomBytes(32).toString('hex');
   db.prepare('INSERT INTO sessions VALUES (?,?,?)').run(sha256(token),userId,Date.now()+7*86400_000);
   return token;
-};
-const b64 = obj => Buffer.from(JSON.stringify(obj)).toString('base64url');
-const mediaToken = (user, room) => {
-  const issued = Math.floor(Date.now()/1000);
-  const payload = { iss:process.env.LIVEKIT_API_KEY,sub:user.id,name:user.username,
-    iat:issued,nbf:issued-5,exp:issued+3600,
-    video:{room,roomJoin:true,canPublish:true,canSubscribe:true} };
-  const unsigned = b64({alg:'HS256',typ:'JWT'}) + '.' + b64(payload);
-  return unsigned + '.' + createHmac('sha256', process.env.LIVEKIT_API_SECRET).update(unsigned).digest('base64url');
 };
 
 const v02 = createV02({ db, sessionUser, membership, limit, fail, json, requestBody, now });
@@ -261,13 +253,12 @@ export const app = http.createServer(async (req,res) => {
       return json(res,inserted?201:200,{message:{id:Number(record.id),content:record.content,username:user.username,created_at:record.created_at},duplicate:!inserted});
     }
     if (method==='POST' && pathname==='/api/media/token') {
+      limit(req,'media',40);
       const {channel_id}=await requestBody(req);
       if (typeof channel_id!=='string') throw fail(400,'Canal inválido');
       const channel=accessibleChannel(user.id,channel_id);
       if (channel.type!=='voice') throw fail(400,'Entre em um canal de voz');
-      const {LIVEKIT_URL}=process.env;
-      if(!liveKitReady())throw fail(503,'LiveKit ainda não configurado no servidor');
-      return json(res,200,{url:LIVEKIT_URL,token:mediaToken(user,'veylor-'+channel.id)});
+      return json(res,200,issueMediaAccess(user,channel));
     }
     throw fail(404,'Rota não encontrada');
   } catch (error) {
