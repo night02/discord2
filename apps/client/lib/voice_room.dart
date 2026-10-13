@@ -6,6 +6,7 @@ import 'package:livekit_client/livekit_client.dart' as lk;
 import 'package:livekit_noise_filter/livekit_noise_filter.dart';
 
 import 'noise_profile.dart';
+import 'media_gallery_layout.dart';
 
 /// Only accepts short-lived credentials issued by the authenticated Veylor API.
 /// Never logs, persists, displays or passes the token through a navigation URL.
@@ -237,12 +238,68 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
     super.dispose();
   }
 
-  Widget _participantCard(lk.Participant participant,{bool self=false}) {
+  /// Prefer someone else's active share, then our own. Muted and unsubscribed
+  /// publications are ignored so a finished stream cannot block the gallery.
+  ({lk.Participant participant, lk.VideoTrack track})? _activeScreenStage(
+      List<lk.Participant> others) {
+    final people=<lk.Participant>[
+      ...others,
+      if(room.localParticipant!=null)room.localParticipant!,
+    ];
+    for(final participant in people) {
+      for(final publication in participant.videoTrackPublications) {
+        if(!publication.isScreenShare || publication.muted ||
+            publication.track is! lk.VideoTrack)continue;
+        final isSelf=participant==room.localParticipant;
+        if(!isSelf&&!publication.subscribed)continue;
+        return (participant:participant,track:publication.track as lk.VideoTrack);
+      }
+    }
+    return null;
+  }
+
+  Widget _screenStage(
+      ({lk.Participant participant, lk.VideoTrack track}) active) {
+    final self=active.participant==room.localParticipant;
+    final who=self?'Sua transmissão':
+      active.participant.name.isNotEmpty
+      ?active.participant.name:'Participante';
+    return Container(
+      decoration:BoxDecoration(
+        color:const Color(0xFF101216),
+        borderRadius:BorderRadius.circular(16),
+        border:Border.all(color:const Color(0xFF4C5261)),
+      ),
+      clipBehavior:Clip.antiAlias,
+      child:Stack(fit:StackFit.expand,children:[
+        // The SDK owns the subscribed video track and its adaptive lifecycle.
+        lk.VideoTrackRenderer(active.track),
+        Positioned(left:12,top:12,
+          child:Container(
+            padding:const EdgeInsets.symmetric(horizontal:10,vertical:6),
+            decoration:BoxDecoration(color:const Color(0xD915171B),
+              borderRadius:BorderRadius.circular(8)),
+            child:Row(mainAxisSize:MainAxisSize.min,children:[
+              const Icon(Icons.screen_share,size:15,color:Color(0xFF55D6A0)),
+              const SizedBox(width:8),
+              Text('AO VIVO • $who',
+                style:const TextStyle(color:Colors.white,fontSize:12,
+                  fontWeight:FontWeight.w600)),
+            ]),
+          )),
+      ]),
+    );
+  }
+
+  Widget _participantCard(lk.Participant participant,
+      {bool self=false,bool screenOnStage=false}) {
     lk.VideoTrack? visible;
-    // Prefer screen share, then show the participant's camera.
     final tracks=participant.videoTrackPublications.toList();
-    tracks.sort((a,b)=>(b.isScreenShare?1:0).compareTo(a.isScreenShare?1:0));
+    // With a dedicated screen stage, use the camera for thumbnails. A stream
+    // must never appear as a duplicated tiny share inside a participant tile.
+    tracks.sort((a,b)=>(a.isScreenShare?1:0).compareTo(b.isScreenShare?1:0));
     for(final publication in tracks) {
+      if(screenOnStage && publication.isScreenShare)continue;
       if(!publication.muted && publication.track is lk.VideoTrack &&
           (self || publication.subscribed)) {
         visible=publication.track as lk.VideoTrack;
@@ -266,8 +323,28 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
         Text(self?'Você':participant.name.isNotEmpty?participant.name:'Participante',
             maxLines:1,overflow:TextOverflow.ellipsis),
         if(self && !camera)const Padding(padding:EdgeInsets.only(top:4),
-          child:Text('Sua câmera está desligada',style:TextStyle(fontSize:11,color:Colors.white60))),
+          child:Text('Sua câmera está desligada',style:TextStyle(
+            fontSize:11,color:Colors.white60))),
       ])));
+  }
+
+  Widget _participantsGrid(List<lk.Participant> people,
+      {required bool hasStage}) {
+    return LayoutBuilder(builder:(context,size) {
+      final columns=MediaGalleryLayout.columnsForWidth(
+        size.maxWidth,watchingScreen:hasStage);
+      return GridView.builder(
+        padding:EdgeInsets.all(hasStage?10:18),
+        gridDelegate:SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount:columns,
+          mainAxisSpacing:10,crossAxisSpacing:10,
+          childAspectRatio:hasStage?1.65:size.maxWidth<550?1.55:1.4),
+        itemCount:people.length,
+        itemBuilder:(ctx,i)=>_participantCard(people[i],
+          self:people[i]==room.localParticipant,
+          screenOnStage:hasStage),
+      );
+    });
   }
 
   @override
@@ -277,6 +354,7 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
       if(room.localParticipant!=null)room.localParticipant!,
       ...others
     ];
+    final screenStage=_activeScreenStage(others);
     return Scaffold(
       appBar:AppBar(
         backgroundColor:const Color(0xFF202127),
@@ -301,18 +379,19 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
             FilledButton(onPressed:_leave,child:const Text('Voltar'))
           ]))
           :people.isEmpty?const Center(child:Text('Aguardando participantes...'))
-          :LayoutBuilder(builder:(context,size){
-            final columns=size.maxWidth>920?3:size.maxWidth>550?2:1;
-            return GridView.builder(
-              padding:const EdgeInsets.all(18),
-              gridDelegate:SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount:columns,mainAxisSpacing:12,crossAxisSpacing:12,
-                childAspectRatio:size.maxWidth<550?1.55:1.4),
-              itemCount:people.length,
-              itemBuilder:(ctx,i)=>_participantCard(people[i],
-                self:people[i]==room.localParticipant),
-            );
-          })),
+          :screenStage==null
+            ?_participantsGrid(people,hasStage:false)
+            :LayoutBuilder(builder:(context,size)=>Column(children:[
+                Expanded(
+                  flex:MediaGalleryLayout.stageFlexForWidth(size.maxWidth),
+                  child:Padding(
+                    padding:const EdgeInsets.fromLTRB(12,12,12,4),
+                    child:_screenStage(screenStage),
+                  ),
+                ),
+                Expanded(flex:4,
+                  child:_participantsGrid(people,hasStage:true)),
+              ]))),
         if(connected)Padding(
           padding:const EdgeInsets.symmetric(horizontal:16,vertical:4),
           child:Text(
