@@ -3,15 +3,16 @@ import {readFileSync} from 'node:fs';
 import {
   one,rows,query,transaction,randomUUID,randomBytes,sha,now,fail,json,body,
   passwordHash,passwordMatch,createSession,sessionUser,memberRole,requireAdmin,
-  createServer,channelFor,checkedMessage,checkedNonce,afterCursor,limit,mediaToken
+  createServer,channelFor,checkedMessage,checkedNonce,afterCursor,limit
 } from './pg-common.mjs';
 import {pool,ensureSchema} from './pg-db.mjs';
 import {attachRealtime,disconnectToken,notifyServer,notifyChannel} from './pg-realtime.mjs';
 import {extraRoutes} from './pg-routes.mjs';
 import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
 import {pgDiscordAdapter} from './discord-pg.mjs';
-import {integrationStatus,liveKitReady} from './integration-readiness.mjs';
+import {integrationStatus} from './integration-readiness.mjs';
 import {createReleaseMetadata} from './release-metadata.mjs';
+import {issueMediaAccess} from './media-access.mjs';
 
 const discordAuth=createDiscordOAuth(pgDiscordAdapter());
 function oauthCallbackPage(res,ok){
@@ -155,13 +156,12 @@ export const app=http.createServer(async(req,res)=>{
       },duplicate:!inserted});
     }
     if(m==='POST'&&route==='/api/media/token'){
+      limit(req,'media',40);
       const {channel_id}=await body(req);
       if(typeof channel_id!=='string')throw fail(400,'Canal inválido');
       const channel=await channelFor(user.id,channel_id);
       if(channel.type!=='voice')throw fail(400,'Entre em um canal de voz');
-      const {LIVEKIT_URL}=process.env;
-      if(!liveKitReady())throw fail(503,'LiveKit ainda não configurado no servidor');
-      return json(res,200,{url:LIVEKIT_URL,token:mediaToken(user,'veylor-'+channel.id)});
+      return json(res,200,issueMediaAccess(user,channel));
     }
     throw fail(404,'Rota não encontrada');
   }catch(error){

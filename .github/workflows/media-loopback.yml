@@ -1,0 +1,30 @@
+name: Media SFU loopback
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  media:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install pinned native test SDK
+        run: npm install --no-audit --no-fund
+        working-directory: tools/media-lab
+      - name: Download and verify pinned loopback SFU
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 https://github.com/livekit/livekit/releases/download/v1.13.9/livekit_1.13.9_linux_amd64.tar.gz -o "$RUNNER_TEMP/livekit.tgz"
+          echo "0b7fa208b662d09cfdeae8c06cf4c481aead0556086558b48250501e2e2d6e20  $RUNNER_TEMP/livekit.tgz" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/livekit-test"
+          tar --no-same-owner -xzf "$RUNNER_TEMP/livekit.tgz" -C "$RUNNER_TEMP/livekit-test"
+          chmod +x "$RUNNER_TEMP/livekit-test/livekit-server"
+      - name: Verify actual audio and video without device capture
+        run: LIVEKIT_TEST_BINARY="$RUNNER_TEMP/livekit-test/livekit-server" npm test
+        working-directory: tools/media-lab

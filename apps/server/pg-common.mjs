@@ -1,4 +1,4 @@
-import {randomUUID,randomBytes,createHash,scryptSync,timingSafeEqual,createHmac} from 'node:crypto';
+import {randomUUID,randomBytes,createHash,scryptSync,timingSafeEqual} from 'node:crypto';
 import {one,rows,query,transaction} from './pg-db.mjs';
 
 export {randomUUID,randomBytes,one,rows,query,transaction};
@@ -100,12 +100,4 @@ export const createServer=async(client,uid,name)=>{
   await client.query("INSERT INTO channels VALUES($1,$2,'geral','text')",[randomUUID(),sid]);
   await client.query("INSERT INTO channels VALUES($1,$2,'bate-papo','voice')",[randomUUID(),sid]);
   return{id:sid,name};
-};
-const enc=x=>Buffer.from(JSON.stringify(x)).toString('base64url');
-export const mediaToken=(u,room)=>{
-  const t=Math.floor(Date.now()/1000);
-  const payload={iss:process.env.LIVEKIT_API_KEY,sub:u.id,name:u.username,iat:t,nbf:t-5,exp:t+3600,
-    video:{room,roomJoin:true,canPublish:true,canSubscribe:true}};
-  const unsigned=enc({alg:'HS256',typ:'JWT'})+'.'+enc(payload);
-  return unsigned+'.'+createHmac('sha256',process.env.LIVEKIT_API_SECRET).update(unsigned).digest('base64url');
 };
