@@ -19,16 +19,24 @@ class _ChatPaneState extends State<ChatPane> {
   void _saveDraft(){
     if(!_syncing && widget.app.account?.id==_draftAccount && widget.app.phase==AppPhase.signedIn)widget.app.saveDraft(_draftTarget,editor.text);
   }
+  void _restoreDraft(){
+    final saved=widget.app.draft(_draftTarget);
+    if(editor.text==saved)return;
+    _syncing=true;editor.text=saved;_syncing=false;
+  }
   void _onAppChanged(){
     if(!mounted)return;
     if(widget.app.account?.id!=_draftAccount || widget.app.phase!=AppPhase.signedIn){
       _draftTarget=null;_draftAccount=widget.app.account?.id;_syncing=true;editor.clear();_syncing=false;
     }
     if(_draftTarget!=widget.app.conversation){
-      _saveDraft();_draftTarget=widget.app.conversation;_syncing=true;editor.text=widget.app.draft(_draftTarget);_syncing=false;
+      _draftTarget=widget.app.conversation;_restoreDraft();
       search.clear();_hasNew=false;_lastCount=widget.app.messages.length;
       WidgetsBinding.instance.addPostFrameCallback((_){if(mounted && scroll.hasClients)scroll.jumpTo(0);});
-    }else if(widget.app.messages.length>_lastCount){_hasNew=scroll.hasClients && scroll.offset>120;_lastCount=widget.app.messages.length;}
+    }else{
+      _restoreDraft();
+      if(widget.app.messages.length>_lastCount){_hasNew=scroll.hasClients && scroll.offset>120;_lastCount=widget.app.messages.length;}
+    }
     setState((){});
   }
   Future<void> send() async {
@@ -42,7 +50,7 @@ class _ChatPaneState extends State<ChatPane> {
     if(scroll.hasClients)await scroll.animateTo(0,duration:const Duration(milliseconds:180),curve:Curves.easeOut);
   }
   @override void dispose(){
-    widget.app.removeListener(_onAppChanged);editor.removeListener(_saveDraft);_saveDraft();editor.dispose();search.dispose();scroll.dispose();super.dispose();
+    widget.app.removeListener(_onAppChanged);editor.removeListener(_saveDraft);editor.dispose();search.dispose();scroll.dispose();super.dispose();
   }
   @override Widget build(BuildContext context){
     final app=widget.app,target=app.conversation,query=search.text.trim().toLowerCase();

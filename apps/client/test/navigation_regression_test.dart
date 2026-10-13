@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:veylor/api_client.dart';
 import 'package:veylor/application/models.dart';
 import 'package:veylor/application/veylor_controller.dart';
 import 'package:veylor/main.dart';
@@ -62,8 +61,9 @@ void main() {
     addTearDown(f.dispose);
     await f.openCommunity();
     f.api.handler = (method, route, body) async {
-      if (method == 'POST')
+      if (method == 'POST') {
         throw const ApiException(503, 'Envio temporariamente indisponível');
+      }
       return f.api.response(method, route, body);
     };
     expect(await f.app.send('olá'), isFalse);
@@ -100,39 +100,45 @@ void main() {
     tester,
   ) async {
     final f = WorkspaceFixture();
-    addTearDown(f.dispose);
-    f.api.threads.add({'id': 'thread-b', 'username': 'Alice'});
-    await f.login();
-    await f.app.selectThread(f.app.threads.first);
-    await tester.pumpWidget(
-      VeylorApp(controller: f.app, sessionRestorationEnabled: false),
-    );
-    await tester.pumpAndSettle();
-    final composer = find.byKey(const ValueKey('message-composer'));
-    await tester.enterText(composer, 'Mesmo texto');
-    final response = Completer<Json>();
-    f.api.handler = (method, route, body) async {
-      if (method == 'POST' && route == '/api/dms/thread-a/messages')
-        return response.future;
-      return f.api.response(method, route, body);
-    };
-    await tester.tap(find.byKey(const ValueKey('send-message')));
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('dm-thread-b')));
-    await tester.pumpAndSettle();
-    await tester.enterText(composer, 'Mesmo texto');
-    response.complete({
-      'message': FixtureApi.message(901, 'Mesmo texto', username: 'Vinicius'),
-    });
-    await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(composer).controller!.text, 'Mesmo texto');
-    expect(f.app.conversation, const Conversation.direct('thread-b'));
-    expect(f.app.messages, isEmpty);
-    await tester.tap(find.byKey(const ValueKey('dm-thread-a')));
-    await tester.pumpAndSettle();
-    expect(tester.widget<TextField>(composer).controller!.text, '');
-    expect(find.text('Mesmo texto'), findsOneWidget);
-    await tester.pumpWidget(const SizedBox.shrink());
+    try {
+      f.api.threads.add({'id': 'thread-b', 'username': 'Alice'});
+      await f.login();
+      await f.app.selectThread(f.app.threads.first);
+      await tester.pumpWidget(
+        VeylorApp(controller: f.app, sessionRestorationEnabled: false),
+      );
+      await tester.pumpAndSettle();
+      final composer = find.byKey(const ValueKey('message-composer'));
+      await tester.enterText(composer, 'Mesmo texto');
+      final response = Completer<Json>();
+      f.api.handler = (method, route, body) async {
+        if (method == 'POST' && route == '/api/dms/thread-a/messages') {
+          return response.future;
+        }
+        return f.api.response(method, route, body);
+      };
+      await tester.tap(find.byKey(const ValueKey('send-message')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('dm-thread-b')));
+      await tester.pumpAndSettle();
+      await tester.enterText(composer, 'Mesmo texto');
+      response.complete({
+        'message': FixtureApi.message(901, 'Mesmo texto', username: 'Vinicius'),
+      });
+      await tester.pumpAndSettle();
+      expect(f.app.draft(const Conversation.direct('thread-a')), '');
+      expect(f.app.draft(const Conversation.direct('thread-b')), 'Mesmo texto');
+      expect(tester.widget<TextField>(composer).controller!.text, 'Mesmo texto');
+      expect(f.app.conversation, const Conversation.direct('thread-b'));
+      expect(f.app.messages, isEmpty);
+      await tester.tap(find.byKey(const ValueKey('dm-thread-a')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(composer).controller!.text, '');
+      expect(find.text('Mesmo texto'), findsOneWidget);
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      f.dispose();
+    }
   });
 
   testWidgets(
@@ -150,34 +156,37 @@ void main() {
         tester.platformDispatcher.clearTextScaleFactorTestValue();
       });
       final f = WorkspaceFixture();
-      addTearDown(f.dispose);
-      await f.openCommunity();
-      await tester.pumpWidget(
-        VeylorApp(controller: f.app, sessionRestorationEnabled: false),
-      );
-      await tester.pumpAndSettle();
-      final composer = find.byKey(const ValueKey('message-composer'));
-      await tester.enterText(composer, 'Rascunho no celular');
-      tester.view.viewInsets = const FakeViewPadding(bottom: 240);
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.byKey(const ValueKey('open-navigation')));
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      await tester.tap(find.byKey(const ValueKey('channel-channel-b')));
-      await tester.pumpAndSettle();
-      expect(
-        tester.state<ScaffoldState>(find.byType(Scaffold)).isDrawerOpen,
-        isFalse,
-      );
-      expect(f.app.conversation, const Conversation.channel('channel-b'));
-      expect(tester.widget<TextField>(composer).controller!.text, '');
-      expect(
-        f.app.draft(const Conversation.channel('channel-a')),
-        'Rascunho no celular',
-      );
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox.shrink());
+      try {
+        await f.openCommunity();
+        await tester.pumpWidget(
+          VeylorApp(controller: f.app, sessionRestorationEnabled: false),
+        );
+        await tester.pumpAndSettle();
+        final composer = find.byKey(const ValueKey('message-composer'));
+        await tester.enterText(composer, 'Rascunho no celular');
+        tester.view.viewInsets = const FakeViewPadding(bottom: 240);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byKey(const ValueKey('open-navigation')));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byKey(const ValueKey('channel-channel-b')));
+        await tester.pumpAndSettle();
+        expect(
+          tester.state<ScaffoldState>(find.byType(Scaffold)).isDrawerOpen,
+          isFalse,
+        );
+        expect(f.app.conversation, const Conversation.channel('channel-b'));
+        expect(tester.widget<TextField>(composer).controller!.text, '');
+        expect(
+          f.app.draft(const Conversation.channel('channel-a')),
+          'Rascunho no celular',
+        );
+        expect(tester.takeException(), isNull);
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        f.dispose();
+      }
     },
   );
 }
