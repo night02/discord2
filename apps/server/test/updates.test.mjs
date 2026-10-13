@@ -29,7 +29,7 @@ test('Android update manifest is public and uses trusted HTTPS download', {timeo
   const uri=new URL(data.download_url);
   assert.equal(uri.protocol,'https:');
   assert.equal(uri.hostname,'github.com');
-  assert.match(uri.pathname,/^\/night02\/discord2\/(?:actions\/runs\/\d+|releases\/tag\/v\d+\.\d+\.\d+-beta)$/);
+  assert.match(uri.pathname,/^\/night02\/discord2\/(?:actions\/runs\/\d+|releases\/tag\/v\d+\.\d+\.\d+-beta(?:\.[1-9]\d*)?)$/);
   assert.equal(data.installation,'manual');
   const win=await fetch(root+'/api/updates/windows');
   assert.equal(win.status,200);
@@ -42,7 +42,7 @@ test('Android update manifest is public and uses trusted HTTPS download', {timeo
   const source=new URL(windows.download_url);
   assert.equal(source.protocol,'https:');
   assert.equal(source.hostname,'github.com');
-  assert.match(source.pathname,/^\/night02\/discord2\/(?:actions\/runs\/\d+|releases\/tag\/v\d+\.\d+\.\d+-beta)$/);
+  assert.match(source.pathname,/^\/night02\/discord2\/(?:actions\/runs\/\d+|releases\/tag\/v\d+\.\d+\.\d+-beta(?:\.[1-9]\d*)?)$/);
   const missing=await fetch(root+'/api/updates/ios');
   assert.equal(missing.status,401);
 });

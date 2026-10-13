@@ -9,10 +9,12 @@ import { createV02 } from './v02.mjs';
 import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
 import {sqliteDiscordAdapter} from './discord-sqlite.mjs';
 import {integrationStatus,liveKitReady} from './integration-readiness.mjs';
+import {createReleaseMetadata} from './release-metadata.mjs';
 
 // Public update metadata points only to already-built, manually verified beta artifacts.
 const androidRelease = JSON.parse(readFileSync(new URL('./mobile-release.json', import.meta.url),'utf8'));
 const windowsRelease = JSON.parse(readFileSync(new URL('./windows-release.json', import.meta.url),'utf8'));
+const updateMetadata=createReleaseMetadata({fallback:{android:androidRelease,windows:windowsRelease}});
 const port = Number(process.env.PORT || 8080);
 const host = process.env.HOST || '127.0.0.1';
 const databaseFile = path.resolve(process.env.VEYLOR_DB_PATH || './data/veylor.sqlite');
@@ -142,8 +144,8 @@ export const app = http.createServer(async (req,res) => {
     const pathname = uri.pathname;
     const method = req.method;
     if (method==='GET' && pathname==='/health') return json(res,200,{status:'ok',app:'Veylor'});
-    if (method==='GET' && pathname==='/api/updates/android') return json(res,200,androidRelease);
-    if (method==='GET' && pathname==='/api/updates/windows') return json(res,200,windowsRelease);
+    if (method==='GET' && pathname==='/api/updates/android') return json(res,200,await updateMetadata.get('android'));
+    if (method==='GET' && pathname==='/api/updates/windows') return json(res,200,await updateMetadata.get('windows'));
     if (method==='POST' && pathname==='/api/auth/discord/start') {
       limit(req,'discord-start',12);
       return json(res,200,await discordAuth.start());

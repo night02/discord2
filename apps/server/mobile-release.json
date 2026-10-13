@@ -2,12 +2,12 @@
   "schema": 1,
   "platform": "android",
   "channel": "beta",
-  "version": "0.3.3",
-  "build": 7,
-  "title": "Veylor V0.3.3 — Beta na nova conta",
-  "notes": "V0.3.3 beta Android de teste (APK debug). Conta GitHub night02 obrigatória. Instalação manual; pode exigir reinstalação por assinatura diferente.",
-  "download_url": "https://github.com/night02/discord2/actions/runs/38293939145",
-  "distribution": "github_actions_private",
+  "version": "0.4.2",
+  "build": 95,
+  "title": "Veylor V0.4.2 — Beta publicada",
+  "notes": "Beta aprovada com pacotes Windows, Android e Linux. Instalação mediante confirmação; Android debug é exclusivamente para testes.",
+  "download_url": "https://github.com/night02/discord2/releases/tag/v0.4.2-beta.38341839352",
+  "distribution": "github_releases_public",
   "installation": "manual",
   "mandatory": false
 }

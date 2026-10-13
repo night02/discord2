@@ -11,6 +11,7 @@ import {extraRoutes} from './pg-routes.mjs';
 import {createDiscordOAuth,safeOAuthHtml} from './discord-oauth.mjs';
 import {pgDiscordAdapter} from './discord-pg.mjs';
 import {integrationStatus,liveKitReady} from './integration-readiness.mjs';
+import {createReleaseMetadata} from './release-metadata.mjs';
 
 const discordAuth=createDiscordOAuth(pgDiscordAdapter());
 function oauthCallbackPage(res,ok){
@@ -25,6 +26,7 @@ function oauthCallbackPage(res,ok){
 
 const release=JSON.parse(readFileSync(new URL('./mobile-release.json',import.meta.url),'utf8'));
 const windowsRelease=JSON.parse(readFileSync(new URL('./windows-release.json',import.meta.url),'utf8'));
+const updateMetadata=createReleaseMetadata({fallback:{android:release,windows:windowsRelease}});
 export const app=http.createServer(async(req,res)=>{
   try{
     const url=new URL(req.url||'/','http://localhost'),route=url.pathname,m=req.method;
@@ -32,8 +34,8 @@ export const app=http.createServer(async(req,res)=>{
       await query('SELECT 1');
       return json(res,200,{status:'ok',app:'Veylor',storage:'postgres'});
     }
-    if(m==='GET'&&route==='/api/updates/android')return json(res,200,release);
-    if(m==='GET'&&route==='/api/updates/windows')return json(res,200,windowsRelease);
+    if(m==='GET'&&route==='/api/updates/android')return json(res,200,await updateMetadata.get('android'));
+    if(m==='GET'&&route==='/api/updates/windows')return json(res,200,await updateMetadata.get('windows'));
     if(m==='POST'&&route==='/api/auth/discord/start'){
       limit(req,'discord-start',12);
       return json(res,200,await discordAuth.start());

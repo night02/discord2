@@ -13,6 +13,8 @@ import 'update_diagnostics.dart';
 import 'voice_room.dart';
 import 'discord_login.dart';
 import 'api_endpoint.dart';
+import 'api_client.dart';
+export 'api_client.dart' show Api, ApiException;
 
 List<String> _startupArguments = const [];
 void main(List<String> args) {
@@ -25,38 +27,6 @@ const sidebar = Color(0xFF191A20);
 const background = Color(0xFF303137);
 const highlight = Color(0xFF373A44);
 const muted = Color(0xFF9FA3B1);
-
-class Api {
-  Api(this.baseUrl);
-  String baseUrl;
-  String? token;
-  Future<Map<String,dynamic>> request(String method, String route, [Map<String,dynamic>? body]) async {
-    final client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
-    try {
-      final req = await client.openUrl(method, Uri.parse(baseUrl + route));
-      req.headers.contentType = ContentType.json;
-      if(token != null) req.headers.set('Authorization','Bearer ' + token!);
-      if(body != null) req.write(jsonEncode(body));
-      final response = await req.close().timeout(const Duration(seconds: 15));
-      final decoded = jsonDecode(
-        await utf8.decoder.bind(response).join().timeout(const Duration(seconds:15))
-      ) as Map<String,dynamic>;
-      if(response.statusCode >= 400) {
-        throw ApiException(response.statusCode, (decoded['error'] ?? 'Erro HTTP').toString());
-      }
-      return decoded;
-    } finally {
-      client.close(force:true);
-    }
-  }
-}
-class ApiException implements Exception {
-  const ApiException(this.statusCode,this.message);
-  final int statusCode;
-  final String message;
-  @override
-  String toString()=>message;
-}
 
 class VeylorApp extends StatelessWidget {
   const VeylorApp({super.key, this.sessionRestorationEnabled=true});
@@ -191,7 +161,7 @@ class _HomeState extends State<Home> {
           const SizedBox(height:12),Text(update.notes),
           const SizedBox(height:12),
           Text(Platform.isAndroid
-            ? 'O download exige acesso ao GitHub privado. APKs de teste podem ter '
+            ? 'O download abre a página oficial do GitHub. APKs de teste podem ter '
               'assinaturas diferentes e exigir reinstalação.'
             : 'O Windows baixa apenas a Release oficial e valida SHA-256 antes '
               'de pedir sua confirmação. A Veylor é fechada para instalar e '
