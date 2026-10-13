@@ -2,7 +2,7 @@
 
 Veylor é um aplicativo **beta** de comunicação por texto para Windows, Android e Linux, com cliente Flutter e backend Node.js/PostgreSQL. O objetivo é oferecer servidores, canais de texto e conversas privadas com sincronização em tempo real.
 
-> **Estado atual:** V0.3.8 beta publicada; V0.4.0 em testes com sala de voz LiveKit. Um servidor LiveKit com credenciais é necessário para mídia real.
+> **Estado atual:** V0.4.0 beta publicada com builds Windows, Android e Linux aprovados. V0.4.1 em preparação: palco de transmissão de tela e miniaturas responsivas. Um servidor LiveKit configurado ainda é necessário para chamadas reais.
 
 ## Recursos atuais
 
@@ -18,7 +18,7 @@ Veylor é um aplicativo **beta** de comunicação por texto para Windows, Androi
 - Logs redigidos de atualização em `%LOCALAPPDATA%\\Veylor\\Logs`. A versão exibida na interface agora é consultada do pacote instalado.
 - Servidor compatível com PostgreSQL ou SQLite local para desenvolvimento.
 
-**V0.4.0 (beta em preparação):** permite entrar em salas de voz LiveKit e publicar tela no Windows/macOS, somente se a API tiver LiveKit configurado. Ainda não foram validadas chamadas de ponta a ponta em dois aparelhos. Não oferece gravação nem atualização silenciosa.
+**V0.4.0 (beta publicada):** permite entrar em salas de voz LiveKit e publicar tela no Windows/macOS, somente se a API tiver LiveKit configurado. Ainda não foram validadas chamadas de ponta a ponta em dois aparelhos. Não oferece gravação nem atualização silenciosa.
 
 ## Downloads beta
 
@@ -79,3 +79,5 @@ Para o Android e outros computadores use uma URL HTTPS do backend acessível pel
 - [PostgreSQL no Render](docs/RENDER_STAGING.md)
 
 **Importante:** o banco PostgreSQL gratuito do ambiente de homologação foi criado com vencimento previsto para **11/11/2026**. Faça migração/backup para armazenamento durável antes de manter usuários reais nessa base.
+
+- [Palco de transmissão e miniaturas V0.4.1](docs/V0.4.1_SCREEN_STAGE.md)
