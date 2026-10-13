@@ -50,14 +50,14 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
           persist-credentials: false
-      - name: Verify main commit, build identity, version and unique release tag
+      - name: Verify main lineage, build identity, version and unique release tag
         id: metadata
         shell: bash
         run: |
           set -euo pipefail
-          current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
-          if [[ "$HEAD_SHA" != "$current_main" ]]; then
-            echo "::error::Build commit is not the current main branch; refusing to publish stale code."
+          ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$HEAD_SHA...main" --jq '.status')
+          if [[ "$ancestry" != "ahead" && "$ancestry" != "identical" ]]; then
+            echo "::error::Build commit must belong to main history."
             exit 1
           fi
           details=$(gh run view "$BUILD_RUN" --repo "$GITHUB_REPOSITORY" --json headBranch,headSha,conclusion,workflowName,event)
@@ -87,9 +87,9 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in $(seq 1 70); do
-            current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
-            if [[ "$current_main" != "$HEAD_SHA" ]]; then
-              echo "::error::Main advanced while checking tests. Do not publish stale packages."
+            ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$HEAD_SHA...main" --jq '.status')
+            if [[ "$ancestry" != "ahead" && "$ancestry" != "identical" ]]; then
+              echo "::error::Commit no longer belongs to main history."
               exit 1
             fi
             approved=0
@@ -185,9 +185,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          current_main=$(gh api "repos/$GITHUB_REPOSITORY/branches/main" --jq '.commit.sha')
-          if [[ "$HEAD_SHA" != "$current_main" ]]; then
-            echo "::error::Main advanced since verification, refusing to release old commit."
+          ancestry=$(gh api "repos/$GITHUB_REPOSITORY/compare/$HEAD_SHA...main" --jq '.status')
+          if [[ "$ancestry" != "ahead" && "$ancestry" != "identical" ]]; then
+            echo "::error::Commit is no longer reachable from main; refusing release."
             exit 1
           fi
           if [[ "${ANDROID_SIGNED:-false}" == "true" ]]; then ANDROID_STATUS="Permanent-key APK and Play upload AAB available (verified)"; else ANDROID_STATUS="Not configured (debug only)"; fi
