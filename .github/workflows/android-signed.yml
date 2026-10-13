@@ -97,13 +97,13 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.4.1-Android-signed
+          name: Veylor-v0.4.2-Android-signed
           path: apps/client/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
-          name: Veylor-v0.4.1-Android-Play-AAB
+          name: Veylor-v0.4.2-Android-Play-AAB
           path: apps/client/build/app/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 14
