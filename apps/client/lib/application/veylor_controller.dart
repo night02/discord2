@@ -218,6 +218,7 @@ class VeylorController extends ChangeNotifier {
         final first=channels.where((row)=>row.kind==ChannelKind.text).firstOrNull;
         conversation=first==null?null:Conversation.channel(first.id);
       }
+      _unread.remove(conversation);
       _emit();await refreshMessages();
     }catch(failure){if(_current(epoch) && navigation==_navigationEpoch)await _handleFailure(failure);}
   }
@@ -272,7 +273,11 @@ class VeylorController extends ChangeNotifier {
       if(identical(_pending[target],pending))_pending.remove(target);
       if(draft(target).trim()==content)_drafts.remove(target);
       _emit();return true;
-    }catch(failure){if(_current(epoch))await _handleFailure(failure);return false;}
+    }catch(failure){
+      final sessionExpired=failure is ApiException && failure.statusCode==401;
+      if(_current(epoch) && (target==conversation || sessionExpired))await _handleFailure(failure);
+      return false;
+    }
     finally{if(_current(epoch)){_sending.remove(target);_emit();}}
   }
   Future<void> refreshMembers() async {
