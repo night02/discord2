@@ -107,14 +107,17 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
     if(participant==null)throw StateError('Participante indisponível');
     final previous=noiseProfile;
     if(selected==NoiseProfile.ai)noiseFilter ??= LiveKitNoiseFilter();
-    // Recreate the outgoing mic track only when microphone is active.
-    // Never start microphone capture as a side effect of changing settings.
+    // LiveKit reuses a muted publication on unmute; it DOES NOT rebuild its
+    // processor. Unpublish the old microphone source to apply a new mode.
+    // This is safe even with the mic muted and never starts it by accident.
+    final existing=participant.getTrackPublicationBySource(lk.TrackSource.microphone);
+    if(existing!=null)await participant.removePublishedTrack(existing.sid);
     if(microphone){
-      await participant.setMicrophoneEnabled(false);
       try{
         await participant.setMicrophoneEnabled(true,
           audioCaptureOptions:_micOptions(selected));
       }catch(_){
+        // Best-effort restore the previous capture mode to avoid losing voice.
         try{
           await participant.setMicrophoneEnabled(true,
             audioCaptureOptions:_micOptions(previous));
