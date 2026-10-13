@@ -49,7 +49,7 @@ test('real SFU delivers two-way audio, screen frames, isolation and share stop',
     const audioA=LocalAudioTrack.createAudioTrack('alice-fixture',sourceA),audioB=LocalAudioTrack.createAudioTrack('bob-fixture',sourceB);tracks.push(audioA,audioB);
     const options=new TrackPublishOptions({source:TrackSource.SOURCE_MICROPHONE});
     await alice.localParticipant.publishTrack(audioA,options);await bob.localParticipant.publishTrack(audioB,options);
-    const width=160,height=90,sourceV=new VideoSource(width,height),video=LocalVideoTrack.createVideoTrack('screen-fixture',sourceV);tracks.push(video);
+    const width=160,height=96,sourceV=new VideoSource(width,height),video=LocalVideoTrack.createVideoTrack('screen-fixture',sourceV);tracks.push(video);
     const screen=await alice.localParticipant.publishTrack(video,new TrackPublishOptions({source:TrackSource.SOURCE_SCREENSHARE,simulcast:false}));
     const pixels=new Uint8Array(width*height*4);
     for(let i=0;i<pixels.length;i+=4){pixels[i]=30;pixels[i+1]=120;pixels[i+2]=220;pixels[i+3]=255;}
@@ -69,7 +69,7 @@ test('real SFU delivers two-way audio, screen frames, isolation and share stop',
     await alice.localParticipant.unpublishTrack(screen.sid);
     for(let i=0;i<50 && !ended;i++)await delay(40);
     assert.ok(ended,'Stop must remove the remote publication.');
-    t.diagnostic('Actual two-way PCM, decoded 160x90 video, room isolation and unpublish event verified.');
+    t.diagnostic('Actual two-way PCM, decoded 160x96 video, room isolation and unpublish event verified.');
   }finally{
     await Promise.allSettled(handles.map(reader=>reader.cancel()));
     await Promise.allSettled(tracks.map(track=>track.close()));
