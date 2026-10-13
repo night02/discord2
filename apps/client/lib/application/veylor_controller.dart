@@ -31,6 +31,7 @@ class VeylorController extends ChangeNotifier {
   final _pending=<Conversation,PendingMessage>{};
   final _drafts=<Conversation,String>{};
   Timer? _poll;
+  int? _acceptingOauth;
   bool _disposed=false;
   int _sessionEpoch=0,_navigationEpoch=0,_indexEpoch=0,_membersEpoch=0,_oauthEpoch=0,_threadEpoch=0;
   Community? get selectedCommunity=>communities.where((row)=>row.id==selectedCommunityId).firstOrNull;
@@ -122,7 +123,7 @@ class VeylorController extends ChangeNotifier {
         if(!_current(epoch) || oauth!=_oauthEpoch)return false;
         final response=await api.request('POST','/api/auth/discord/poll',{'request_id':request.requestId,'poll_secret':request.pollSecret});
         if(!_current(epoch) || oauth!=_oauthEpoch)return false;
-        if(response['status']=='ready'){await acceptSession(response,epoch:epoch);return _current(epoch) && phase==AppPhase.signedIn;}
+        if(response['status']=='ready'){_acceptingOauth=oauth;try{await acceptSession(response,epoch:epoch);}finally{if(_acceptingOauth==oauth)_acceptingOauth=null;}return _current(epoch) && phase==AppPhase.signedIn;}
       }
       throw StateError('Tempo para autorizar esgotado. Tente novamente.');
     }catch(failure){
@@ -131,9 +132,9 @@ class VeylorController extends ChangeNotifier {
     }finally{if(!_disposed && oauth==_oauthEpoch){busy=false;_emit();}}
   }
   void cancelDiscordLogin(){
-    _oauthEpoch++;_sessionEpoch++;_stopRealtime();
-    if(api.token!=null && phase!=AppPhase.signedIn){
-      api.token=null;account=null;_resetWorkspace();
+    final accepting=_acceptingOauth==_oauthEpoch;_oauthEpoch++;_sessionEpoch++;_stopRealtime();
+    if(accepting){
+      api.token=null;account=null;_resetWorkspace();phase=AppPhase.signedOut;
       unawaited(sessions.clear().catchError((Object _){}));
     }
     busy=false;_emit();
