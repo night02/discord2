@@ -1,0 +1,31 @@
+# The PostgreSQL instance already exists in My Workspace. Referencing it here
+# connects the API without copying its password into git or creating another DB.
+services:
+  - type: web
+    name: veylor-postgres-staging
+    runtime: node
+    plan: free
+    region: virginia
+    repo: https://github.com/night02/discord2
+    branch: main
+    buildCommand: cd apps/server && npm install --omit=dev --no-audit --no-fund
+    startCommand: node apps/server/server.mjs
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: '24'
+      - key: HOST
+        value: 0.0.0.0
+      - key: REQUIRE_POSTGRES
+        value: '1'
+      - key: PG_POOL_MAX
+        value: '10'
+      - key: DATABASE_URL
+        fromDatabase:
+          name: veylor-v2-postgres
+          property: connectionString
+      - key: DISCORD_REDIRECT_URI
+        value: https://veylor-postgres-staging.onrender.com/api/auth/discord/callback

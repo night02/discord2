@@ -2,7 +2,7 @@
 
 Veylor é um aplicativo **beta** de comunicação por texto para Windows, Android e Linux, com cliente Flutter e backend Node.js/PostgreSQL. O objetivo é oferecer servidores, canais de texto e conversas privadas com sincronização em tempo real.
 
-> **Versão do cliente:** V0.4.2, com seleção de transmissões, vídeo ampliado e controles responsivos. A beta é publicada somente após builds Windows, Android, Linux e testes aprovados. Um servidor LiveKit configurado ainda é necessário para chamadas reais.
+> **Versão do cliente:** V0.4.3, com tratamento de erros de conexão e configuração de hospedagem. A beta é publicada somente após builds Windows, Android, Linux e testes aprovados. Um servidor LiveKit configurado ainda é necessário para chamadas reais.
 
 ## Recursos atuais
 
@@ -83,3 +83,5 @@ Para o Android e outros computadores use uma URL HTTPS do backend acessível pel
 
 - [Palco de transmissão e miniaturas V0.4.1](docs/V0.4.1_SCREEN_STAGE.md)
 - [Seleção de transmissões e controles V0.4.2](docs/V0.4.2_CALL_CONTROLS.md)
+
+- [Hospedagem e conexão V0.4.3](docs/V0.4.3_HOSTING.md)
