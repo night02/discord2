@@ -3,6 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:livekit_client/livekit_client.dart' as lk;
+import 'package:livekit_noise_filter/livekit_noise_filter.dart';
+
+import 'noise_profile.dart';
 
 /// Only accepts short-lived credentials issued by the authenticated Veylor API.
 /// Never logs, persists, displays or passes the token through a navigation URL.
@@ -45,7 +48,9 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
     adaptiveStream:true,dynacast:true,
   ));
   bool connecting=true, connected=false, microphone=false, camera=false, sharing=false;
-  bool working=false;
+  bool working=false, aiSupported=false;
+  NoiseProfile noiseProfile=NoiseProfile.standard;
+  LiveKitNoiseFilter? noiseFilter;
   String? failure;
 
   @override
@@ -53,11 +58,61 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
     super.initState();
     room.addListener(_onRoomUpdate);
     unawaited(_connect());
+    unawaited(_checkAiSupport());
   }
 
   void _onRoomUpdate() {
     if(mounted) setState(() {});
   }
+
+  Future<void> _checkAiSupport() async {
+    if(!NoiseCapability.supportsAi(isAndroid:Platform.isAndroid,
+        isIos:Platform.isIOS,isMacOs:Platform.isMacOS))return;
+    try{
+      final supported=await LiveKitNoiseFilter.isSupported();
+      if(mounted)setState(()=>aiSupported=supported);
+    }catch(_){
+      // The optional processor is never enabled when unsupported.
+      if(mounted)setState(()=>aiSupported=false);
+    }
+  }
+
+  lk.AudioCaptureOptions _micOptions(NoiseProfile profile) =>
+      lk.AudioCaptureOptions(
+        echoCancellation:true,
+        autoGainControl:true,
+        highPassFilter:true,
+        noiseSuppression:NoiseCapability.useNativeSuppression(profile),
+        voiceIsolation:NoiseCapability.useNativeSuppression(profile),
+        processor:profile==NoiseProfile.ai?noiseFilter:null,
+      );
+
+  Future<void> _chooseNoiseProfile(NoiseProfile selected) => _action(() async {
+    if(selected==NoiseProfile.ai&&!aiSupported){
+      throw StateError('Este dispositivo não possui filtro de IA compatível.');
+    }
+    if(selected==noiseProfile)return;
+    final participant=room.localParticipant;
+    if(participant==null)throw StateError('Participante indisponível');
+    final previous=noiseProfile;
+    if(selected==NoiseProfile.ai)noiseFilter ??= LiveKitNoiseFilter();
+    // Recreate the outgoing mic track only when microphone is active.
+    // Never start microphone capture as a side effect of changing settings.
+    if(microphone){
+      await participant.setMicrophoneEnabled(false);
+      try{
+        await participant.setMicrophoneEnabled(true,
+          audioCaptureOptions:_micOptions(selected));
+      }catch(_){
+        try{
+          await participant.setMicrophoneEnabled(true,
+            audioCaptureOptions:_micOptions(previous));
+        }catch(_){if(mounted)setState(()=>microphone=false);}
+        rethrow;
+      }
+    }
+    if(mounted)setState(()=>noiseProfile=selected);
+  });
 
   Future<void> _connect() async {
     try {
@@ -89,7 +144,12 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
   Future<void> _toggleMic()=>_action(() async {
     final participant=room.localParticipant;
     if(participant==null)throw StateError('Local participant not ready');
-    await participant.setMicrophoneEnabled(!microphone);
+    if(!microphone&&noiseProfile==NoiseProfile.ai){
+      if(!aiSupported)throw StateError('Filtro de IA não suportado neste dispositivo');
+      noiseFilter ??= LiveKitNoiseFilter();
+    }
+    await participant.setMicrophoneEnabled(!microphone,
+      audioCaptureOptions:_micOptions(noiseProfile));
     if(mounted)setState(()=>microphone=!microphone);
   });
 
@@ -131,14 +191,14 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
       ],
     ));
     if(permitted!=true)return;
-    final track=await lk.LocalVideoTrack.createScreenShareTrack(
-      lk.ScreenShareCaptureOptions(sourceId:source.id,maxFrameRate:15.0));
-    try {
-      await participant.publishVideoTrack(track);
-    } catch (_) {
-      await track.dispose();
-      rethrow;
-    }
+    // Use a managed screen-share source. This ensures 'stop sharing' unpublishes
+    // and releases the SAME source that was started here.
+    await participant.setScreenShareEnabled(true,
+      screenShareCaptureOptions:lk.ScreenShareCaptureOptions(
+        sourceId:source.id,
+        maxFrameRate:15.0,
+        params:lk.VideoParametersPresets.screenShareH1080FPS15,
+      ));
     if(mounted)setState(()=>sharing=true);
   });
 
@@ -236,12 +296,43 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
                 self:people[i]==room.localParticipant),
             );
           })),
+        if(connected)Padding(
+          padding:const EdgeInsets.symmetric(horizontal:16,vertical:4),
+          child:Text(
+            noiseProfile==NoiseProfile.ai
+              ?'Supressão por IA no microfone (local)'
+              :aiSupported
+                ?'Supressão WebRTC ativa. IA disponível no menu Ruído.'
+                :'Redução de ruído WebRTC. IA indisponível neste sistema.',
+            textAlign:TextAlign.center,
+            style:const TextStyle(fontSize:11,color:Colors.white70),
+          )),
         Container(color:const Color(0xFF202127),padding:const EdgeInsets.all(13),
           child:Wrap(alignment:WrapAlignment.center,spacing:12,runSpacing:8,children:[
             FilledButton.tonalIcon(
               onPressed:connected&&!working?_toggleMic:null,
               icon:Icon(microphone?Icons.mic:Icons.mic_off),
               label:Text(microphone?'Silenciar':'Ativar microfone')),
+            PopupMenuButton<NoiseProfile>(
+              tooltip:'Redução de ruído do microfone',
+              enabled:connected&&!working,
+              onSelected:(mode)=>unawaited(_chooseNoiseProfile(mode)),
+              itemBuilder:(ctx)=>[
+                for(final mode in NoiseProfile.values)
+                  PopupMenuItem<NoiseProfile>(
+                    value:mode,
+                    enabled:mode!=NoiseProfile.ai||aiSupported,
+                    child:Row(children:[
+                      Icon(mode==noiseProfile?Icons.radio_button_checked:
+                        Icons.radio_button_unchecked,size:18),
+                      const SizedBox(width:8),
+                      Text(NoiseCapability.label(mode)),
+                    ]),
+                  ),
+              ],
+              child:Chip(avatar:const Icon(Icons.graphic_eq,size:18),
+                label:Text('Ruído: ${NoiseCapability.label(noiseProfile)}')),
+            ),
             FilledButton.tonalIcon(
               onPressed:connected&&!working?_toggleCamera:null,
               icon:Icon(camera?Icons.videocam:Icons.videocam_off),
