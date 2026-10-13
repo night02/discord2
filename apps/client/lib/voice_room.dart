@@ -62,7 +62,18 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
   }
 
   void _onRoomUpdate() {
-    if(mounted) setState(() {});
+    if(!mounted)return;
+    setState(() {
+      if(room.connectionState==lk.ConnectionState.disconnected && !connecting) {
+        connected=false;
+        microphone=false;
+        camera=false;
+        sharing=false;
+        failure ??='A ligação foi encerrada. Saia e entre novamente no canal.';
+      } else if(room.connectionState==lk.ConnectionState.connected && !connecting){
+        connected=true;
+      }
+    });
   }
 
   Future<void> _checkAiSupport() async {
@@ -129,7 +140,7 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
   }
 
   Future<void> _action(Future<void> Function() operation) async {
-    if(working||!connected)return;
+    if(working||!connected||room.connectionState!=lk.ConnectionState.connected)return;
     setState(()=>working=true);
     try {
       await operation();
@@ -239,7 +250,8 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
       decoration:BoxDecoration(
         color:const Color(0xFF24262D),
         borderRadius:BorderRadius.circular(14),
-        border:Border.all(color:const Color(0xFF373A44))),
+        border:Border.all(color:participant.audioLevel>.1
+          ?const Color(0xFF55D6A0):const Color(0xFF373A44),width:2)),
       clipBehavior:Clip.antiAlias,
       child:visible!=null?lk.VideoTrackRenderer(visible):
       Center(child:Column(mainAxisSize:MainAxisSize.min,children:[
@@ -267,7 +279,9 @@ class _VeylorVoiceRoomState extends State<VeylorVoiceRoom> {
         backgroundColor:const Color(0xFF202127),
         title:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           Text(widget.channelName,style:const TextStyle(fontSize:16,fontWeight:FontWeight.bold)),
-          Text(connecting?'Conectando...':connected?'Canal de voz • ${people.length} participante(s)':'Desconectado',
+          Text(connecting?'Conectando...'
+            :room.connectionState==lk.ConnectionState.reconnecting?'Reconectando áudio e vídeo...'
+            :connected?'Canal de voz • ${people.length} participante(s)':'Desconectado',
             style:const TextStyle(fontSize:11,color:Colors.white60)),
         ]),
         actions:[IconButton(tooltip:'Sair do canal',onPressed:_leave,icon:const Icon(Icons.close))],
