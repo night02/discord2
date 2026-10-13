@@ -40,7 +40,7 @@ jobs:
           if ($errors.Count -gt 0) { throw "Invalid Windows signing helper PowerShell syntax." }
       - name: Apply official Veylor logo to Windows exe and installer
         run: python tool/prepare_brand_icon.py
-      - run: flutter build windows --release
+      - run: flutter build windows --release --build-number=${{ github.run_number }}
       - name: Compile external update runner and release marker
         shell: pwsh
         run: |
@@ -187,7 +187,7 @@ jobs:
       - run: flutter config --enable-linux-desktop
       - run: flutter create --project-name veylor --platforms=linux .
       - run: flutter pub get
-      - run: flutter build linux --release
+      - run: flutter build linux --release --build-number=${{ github.run_number }}
       - name: Pack Linux bundle
         run: tar -C build/linux/x64/release/bundle -czf Veylor-v0.4.0-Linux-x64.tar.gz .
       - uses: actions/upload-artifact@v4
@@ -221,7 +221,7 @@ jobs:
       - run: flutter pub get
       - name: Ensure Android API 36 compatibility for LiveKit AI noise filter
         run: python3 tool/prepare_noise_android.py
-      - run: flutter build apk --debug
+      - run: flutter build apk --debug --build-number=${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:
           name: Veylor-v0.4.0-Android-debug
@@ -241,8 +241,8 @@ jobs:
           trap 'rm -f android/app/veylor-release.jks' EXIT
           keytool -genkeypair -noprompt -storetype PKCS12 -keystore android/app/veylor-release.jks -alias veylor-ci -keyalg RSA -keysize 2048 -validity 2 -storepass ci-throwaway-password -keypass ci-throwaway-password -dname "CN=CI Test, O=Veylor, C=BR"
           python3 tool/configure_android_signing.py
-          flutter build apk --release
-          flutter build appbundle --release
+          flutter build apk --release --build-number=${{ github.run_number }}
+          flutter build appbundle --release --build-number=${{ github.run_number }}
           apk=build/app/outputs/flutter-apk/app-release.apk
           aab=build/app/outputs/bundle/release/app-release.aab
           test -s "$apk" && test -s "$aab"
@@ -285,8 +285,8 @@ jobs:
           path.chmod(0o600)
           PY
           python3 tool/configure_android_signing.py
-          flutter build apk --release
-          flutter build appbundle --release
+          flutter build apk --release --build-number=${{ github.run_number }}
+          flutter build appbundle --release --build-number=${{ github.run_number }}
           apk=build/app/outputs/flutter-apk/app-release.apk
           aab=build/app/outputs/bundle/release/app-release.aab
           test -s "$apk" && test -s "$aab"
