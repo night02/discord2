@@ -1,5 +1,5 @@
 #define MyAppName "Veylor"
-#define MyAppVersion "0.4.1"
+#define MyAppVersion "0.4.2"
 #define MyAppExeName "veylor.exe"
 
 [Setup]
@@ -12,7 +12,7 @@ DefaultDirName={localappdata}\Programs\Veylor
 DefaultGroupName=Veylor
 DisableProgramGroupPage=yes
 OutputDir=dist
-OutputBaseFilename=Veylor-v0.4.1-Setup-Windows-x64
+OutputBaseFilename=Veylor-v0.4.2-Setup-Windows-x64
 Compression=lzma2
 SolidCompression=yes
 PrivilegesRequired=lowest

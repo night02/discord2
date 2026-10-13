@@ -2,7 +2,7 @@
 
 Veylor é um aplicativo **beta** de comunicação por texto para Windows, Android e Linux, com cliente Flutter e backend Node.js/PostgreSQL. O objetivo é oferecer servidores, canais de texto e conversas privadas com sincronização em tempo real.
 
-> **Estado atual:** V0.4.0 beta publicada com builds Windows, Android e Linux aprovados. V0.4.1 em preparação: palco de transmissão de tela e miniaturas responsivas. Um servidor LiveKit configurado ainda é necessário para chamadas reais.
+> **Versão do cliente:** V0.4.2, com seleção de transmissões, vídeo ampliado e controles responsivos. A beta é publicada somente após builds Windows, Android, Linux e testes aprovados. Um servidor LiveKit configurado ainda é necessário para chamadas reais.
 
 ## Recursos atuais
 
@@ -13,6 +13,7 @@ Veylor é um aplicativo **beta** de comunicação por texto para Windows, Androi
 - WebSocket para avisos de atualização, reconexão progressiva e recuperação de mensagens via REST.
 - Reenvio de mensagens com identificador de idempotência (evita duplicatas em timeout).
 - Armazenamento de sessão local em Secure Storage do Flutter.
+- Voz e vídeo: palco de tela com seleção entre transmissões, modo ampliado, miniaturas com nome e estado do microfone, e controles compactos no celular.
 - Atualizações Android: abre a página oficial do GitHub, sem instalar APKs automaticamente.
 - Atualizações Windows (V0.3.7+): baixa uma Release oficial no app com SHA-256 obrigatório e até três tentativas em falhas temporárias, solicita confirmação e usa helper externo com backup, recibo de inicialização e rollback em falha no setup ou na abertura inicial.
 - Logs redigidos de atualização em `%LOCALAPPDATA%\\Veylor\\Logs`. A versão exibida na interface agora é consultada do pacote instalado.
@@ -24,7 +25,7 @@ Veylor é um aplicativo **beta** de comunicação por texto para Windows, Androi
 
 Depois de uma execução aprovada, procure os artefatos em **[GitHub Actions](https://github.com/night02/discord2/actions)**. O instalador Windows (`Setup-Windows-x64.exe`) e os pacotes portáteis são gerados separadamente. Os arquivos de Actions expiram após o prazo de retenção.
 
-As **[GitHub Releases](https://github.com/night02/discord2/releases)** são o canal planejado para downloads duradouros. Uma prerelease é publicada automaticamente somente após builds e testes obrigatórios aprovados no mesmo commit de `main`. A instalação e a validação em dispositivos reais continuam manuais. Não considere uma tag ou APK disponível até que os arquivos realmente existam.
+As **[GitHub Releases](https://github.com/night02/discord2/releases)** oferecem os downloads duradouros das betas aprovadas. Uma prerelease é publicada automaticamente somente após builds e testes obrigatórios aprovados no mesmo commit de `main`. A instalação e a validação em dispositivos reais continuam manuais. Não considere uma tag ou APK disponível até que os arquivos realmente existam.
 
 - **Windows:** instalar usando o Setup.exe ou extrair o pacote portátil completo (inclui DLLs).
 - **Android:** APK debug exclusivamente para testes; assinatura permanente ainda pendente. Não há versão Play Store.
@@ -81,3 +82,4 @@ Para o Android e outros computadores use uma URL HTTPS do backend acessível pel
 **Importante:** o banco PostgreSQL gratuito do ambiente de homologação foi criado com vencimento previsto para **11/11/2026**. Faça migração/backup para armazenamento durável antes de manter usuários reais nessa base.
 
 - [Palco de transmissão e miniaturas V0.4.1](docs/V0.4.1_SCREEN_STAGE.md)
+- [Seleção de transmissões e controles V0.4.2](docs/V0.4.2_CALL_CONTROLS.md)
