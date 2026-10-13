@@ -3,39 +3,58 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:veylor/call_media_gallery.dart';
 
 ScreenStageStream stream(String id, String label) => ScreenStageStream(
-  id: id,
-  label: label,
-  video: ColoredBox(key: ValueKey('video-$id'), color: Colors.blue),
-);
+      id: id,
+      label: label,
+      video: ColoredBox(key: ValueKey('video-$id'), color: Colors.blue),
+    );
 
 Widget gallery(List<ScreenStageStream> streams) => MaterialApp(
-  home: Scaffold(
-    appBar: AppBar(title: const Text('Canal de voz')),
-    body: Column(
-      children: [
-        Expanded(
-          child: CallMediaGallery(
-            streams: streams,
-            participants: const [
-              VoiceParticipantTile(name: 'Ana', microphoneEnabled: true),
-              VoiceParticipantTile(name: 'Bruno', microphoneEnabled: false),
-            ],
-          ),
+      home: Scaffold(
+        appBar: AppBar(title: const Text('Canal de voz')),
+        body: Column(
+          children: [
+            Expanded(
+              child: CallMediaGallery(
+                streams: streams,
+                participants: const [
+                  VoiceParticipantTile(name: 'Ana', microphoneEnabled: true),
+                  VoiceParticipantTile(name: 'Bruno', microphoneEnabled: false),
+                ],
+              ),
+            ),
+            SizedBox(
+              height: 72,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(
+                      child: TextButton(
+                          onPressed: () {},
+                          child: const Text('Silenciar',
+                              maxLines: 1, overflow: TextOverflow.ellipsis))),
+                  Expanded(
+                      child: TextButton(
+                          onPressed: () {},
+                          child: const Text('Desconectar',
+                              maxLines: 1, overflow: TextOverflow.ellipsis))),
+                ],
+              ),
+            ),
+          ],
         ),
-        SizedBox(
-          height: 72,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextButton(onPressed: () {}, child: const Text('Silenciar')),
-              TextButton(onPressed: () {}, child: const Text('Desconectar')),
-            ],
-          ),
-        ),
-      ],
-    ),
-  ),
-);
+      ),
+    );
+
+void expectNoLayoutError(WidgetTester tester) {
+  final error = tester.takeException();
+  expect(
+    error,
+    isNull,
+    reason: error is FlutterError
+        ? error.diagnostics.map((node) => node.toStringDeep()).join('\n')
+        : '$error',
+  );
+}
 
 void main() {
   test(
@@ -71,7 +90,7 @@ void main() {
       gallery([stream('ana', 'Ana'), stream('bruno', 'Bruno')]),
     );
     expect(find.byKey(const ValueKey('video-bruno')), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    expectNoLayoutError(tester);
   });
 
   testWidgets(
@@ -98,7 +117,7 @@ void main() {
       expect(find.byKey(const ValueKey('call-participants')), findsOneWidget);
       await tester.pumpWidget(gallery([stream('ana', 'Ana')]));
       expect(find.byKey(const ValueKey('call-participants')), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      expectNoLayoutError(tester);
     },
   );
 
@@ -124,7 +143,7 @@ void main() {
     expect(find.text('Nome muito longo do participante'), findsOneWidget);
     expect(find.byIcon(Icons.mic_off), findsOneWidget);
     expect(find.byIcon(Icons.graphic_eq), findsOneWidget);
-    expect(tester.takeException(), isNull);
+    expectNoLayoutError(tester);
   });
 
   for (final size in [
@@ -152,10 +171,10 @@ void main() {
           ),
         ]),
       );
-      expect(tester.takeException(), isNull);
+      expectNoLayoutError(tester);
       await tester.tap(find.byKey(const ValueKey('stream-selector')));
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
+      expectNoLayoutError(tester);
       await tester.tap(
         find.widgetWithText(
           PopupMenuItem<String>,
@@ -163,11 +182,11 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
+      expectNoLayoutError(tester);
       await tester.tap(find.byKey(const ValueKey('expand-stage')));
       await tester.pump();
       expect(find.text('Desconectar'), findsOneWidget);
-      expect(tester.takeException(), isNull);
+      expectNoLayoutError(tester);
     });
   }
 }
